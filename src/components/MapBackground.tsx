@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useRef, memo, useMemo } from 'react';
-import { MapContainer, TileLayer, useMap, Marker } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap, Marker, Polygon, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LocationState, ActivityMarker, ScaleLevel } from '@/types';
 import { getScaleLevel } from '@/lib/spatialService';
+import * as h3 from 'h3-js';
 
 const ZOOM_LEVELS_CONFIG = [
     { zoom: 14, hex: '#22d3ee' }, // Cyan
     { zoom: 10, hex: '#fbbf24' }, // Amber
-    { zoom: 5, hex: '#818cf8' }, // Indigo
+    { zoom: 5, hex: '#818cf8' },  // Indigo
 ];
 
 // --- Sub Components ---
@@ -67,31 +68,46 @@ const DiscreteZoomController = () => {
     return null;
 };
 
-const ActivityLayer = ({ fetchActivity, onMarkerClick }: any) => {
+const ActivityLayer = ({ fetchActivity, onMarkerClick, zoom }: any) => {
     const map = useMap();
     const [markers, setMarkers] = useState<ActivityMarker[]>([]);
+
     useEffect(() => {
         const fetch = async () => {
-            const res = await fetchActivity(map.getCenter().lat, map.getCenter().lng, map.getZoom());
+            const res = await fetchActivity(map.getCenter().lat, map.getCenter().lng, zoom);
             setMarkers(res || []);
         };
         fetch();
         map.on('moveend zoomend', fetch);
         return () => { map.off('moveend zoomend', fetch); };
-    }, [map, fetchActivity]);
-
-    const hotspotIcon = (color: string) => L.divIcon({
-        className: 'hotspot-marker',
-        html: `<div style="width:16px;height:16px;background:${color};border-radius:50%;box-shadow:0 0 15px ${color};border:2px solid white;"></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
-    });
+    }, [map, fetchActivity, zoom]);
 
     return (
         <>{markers.map(m => {
-            const z = map.getZoom();
-            const config = ZOOM_LEVELS_CONFIG.find(l => Math.abs(l.zoom - z) < 1.5) || ZOOM_LEVELS_CONFIG[0];
-            return (<Marker key={m.id} position={[m.lat, m.lng]} icon={hotspotIcon(config.hex)} eventHandlers={{ click: () => onMarkerClick(m) }} />);
+            if (!m || typeof m.lat !== 'number' || typeof m.lng !== 'number') return null;
+            const config = ZOOM_LEVELS_CONFIG.find(l => Math.abs(l.zoom - zoom) < 1.5) || ZOOM_LEVELS_CONFIG[0];
+            return (
+                <CircleMarker
+                    key={m.id}
+                    center={[m.lat, m.lng]}
+                    radius={6}
+                    pathOptions={{
+                        fillColor: config.hex,
+                        fillOpacity: 0.8,
+                        color: 'white',
+                        weight: 2,
+                        className: 'activity-dot'
+                    }}
+                    eventHandlers={{ click: () => onMarkerClick(m) }}
+                >
+                    <style>{`
+                        .activity-dot {
+                            filter: drop-shadow(0 0 8px ${config.hex});
+                            cursor: pointer;
+                        }
+                    `}</style>
+                </CircleMarker>
+            );
         })}</>
     );
 };
@@ -104,7 +120,35 @@ const MapInvalidator = () => {
     return null;
 };
 
-export const MapBackground = memo(({ initialPosition, userLocation, onLocationChange, onMarkerClick, forcedZoom, fetchActivity }: any) => {
+const UserHexagon = ({ location, zoom }: { location: [number, number] | null, zoom: number }) => {
+    const currentScale = getScaleLevel(zoom);
+    const hexPath = useMemo(() => {
+        if (!location || currentScale === ScaleLevel.WORLD) return null;
+        const res = currentScale === ScaleLevel.CITY ? 4 : 6;
+        const h3Index = h3.latLngToCell(location[0], location[1], res);
+        const boundary = h3.cellToBoundary(h3Index);
+        return boundary.map(b => b as [number, number]);
+    }, [location, currentScale]);
+
+    if (!hexPath) return null;
+
+    const config = ZOOM_LEVELS_CONFIG.find(l => Math.abs(l.zoom - zoom) < 1.5) || ZOOM_LEVELS_CONFIG[0];
+
+    return (
+        <Polygon
+            positions={hexPath}
+            pathOptions={{
+                color: config.hex,
+                weight: 2,
+                fillColor: config.hex,
+                fillOpacity: 0.05,
+                className: 'user-hex-outline'
+            }}
+        />
+    );
+};
+
+export const MapBackground = memo(({ initialPosition, userLocation, onLocationChange, onMarkerClick, forcedZoom, fetchActivity, theme }: any) => {
     const [zoom, setZoom] = useState(5);
     const [domReady, setDomReady] = useState(false);
 
@@ -131,32 +175,48 @@ export const MapBackground = memo(({ initialPosition, userLocation, onLocationCh
         iconAnchor: [25, 25]
     });
 
+    const isDark = theme === 'dark';
+
+    const activeConfig = ZOOM_LEVELS_CONFIG.find(l => Math.abs(l.zoom - zoom) < 1.5) || ZOOM_LEVELS_CONFIG[0];
+
     return (
-        <div className="absolute inset-0 bg-black overflow-hidden">
+        <div className={`absolute inset-0 overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-100'}`}>
             <style>{`
                 @keyframes self-wave { 0% {transform:scale(0.3);opacity:0.6;} 100% {transform:scale(1.4);opacity:0;} }
-                .leaflet-container { background: #000 !important; outline: none !important; }
+                .leaflet-container { background: ${isDark ? '#000' : '#f3f4f6'} !important; outline: none !important; }
                 
-                /* 为了达成“灰色陆地、黑色海洋、灰色文字”，我们采用对 Light 模式的全量重映射 */
+                /* Dark Mode: Invert Everything for that "Terminal" look */
+                ${isDark ? `
                 .leaflet-tile-pane { 
-                    /* 1. Invert: 海洋(白->黑), 陆地(浅灰->深灰), 文字(黑->白) */
-                    /* 2. Brightness(6): 陆地(0.1*6=0.6 灰色), 文字(1*6=1 白色) */
-                    /* 3. Brightness(0.6): 陆地(0.6*0.6=0.36 中灰色), 文字(1*0.6=0.6 灰色) */
-                    filter: invert(1) grayscale(1) brightness(6) contrast(1.2) brightness(0.5);
+                    /* Charcoal Grey Theme (Refined): Greyer ocean, fewer details */
+                    filter: invert(1) grayscale(1) brightness(0.9) contrast(0.8);
                     opacity: 1;
                     transition: filter 0.5s ease;
+                }
+                ` : `
+                /* Light Mode: Clean, slightly desaturated for professionalism */
+                .leaflet-tile-pane {
+                    filter: grayscale(0.2) contrast(1.1);
+                    opacity: 1;
+                    transition: filter 0.5s ease;
+                }
+                `}
+                .user-hex-outline {
+                    filter: drop-shadow(0 0 10px ${activeConfig.hex});
                 }
             `}</style>
             <MapContainer center={initialPosition} zoom={5} zoomControl={false} attributionControl={false} className="w-full h-full" scrollWheelZoom={false} doubleClickZoom={false}>
                 <MapInvalidator />
-                {/* 必须使用基准亮度最高的 Light 版瓦片，反转后才能得到最纯净的黑色 */}
                 <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
                 <MapEvents onMove={onLocationChange} onZoomChange={setZoom} />
                 <MapController center={initialPosition} forcedZoom={forcedZoom} />
                 <DiscreteZoomController />
-                <ActivityLayer fetchActivity={fetchActivity} onMarkerClick={onMarkerClick} />
+                <ActivityLayer fetchActivity={fetchActivity} onMarkerClick={onMarkerClick} zoom={zoom} />
                 {fuzzedLocation && (
-                    <Marker position={fuzzedLocation as [number, number]} icon={selfIcon(ZOOM_LEVELS_CONFIG.find(l => Math.abs(l.zoom - zoom) < 1.5)?.hex || '#fff')} zIndexOffset={1001} />
+                    <>
+                        <UserHexagon location={fuzzedLocation as [number, number]} zoom={zoom} />
+                        <Marker position={fuzzedLocation as [number, number]} icon={selfIcon(activeConfig.hex)} zIndexOffset={1001} />
+                    </>
                 )}
             </MapContainer>
         </div>
@@ -164,3 +224,4 @@ export const MapBackground = memo(({ initialPosition, userLocation, onLocationCh
 });
 
 MapBackground.displayName = 'MapBackground';
+

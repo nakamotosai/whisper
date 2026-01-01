@@ -5,11 +5,13 @@ export enum ScaleLevel {
 }
 
 export type SubTabType = 'CHAT' | 'IMAGES';
+export type ThemeType = 'dark' | 'light';
 
 export interface User {
     id: string;
     avatarSeed: string;
     name: string;
+    countryCode?: string;
 }
 
 export interface Message {
@@ -20,6 +22,7 @@ export interface Message {
     content: string; // Text or Emoji
     timestamp: number;
     type: 'text' | 'emoji' | 'voice' | 'image';
+    countryCode?: string;
 }
 
 export interface RoomStats {

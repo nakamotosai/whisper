@@ -1,67 +1,97 @@
-import { ScaleLevel, LocationState } from '../types';
+import { ScaleLevel } from '@/types';
+import * as h3 from 'h3-js';
+// @ts-ignore
+import { iso1A2Code } from 'country-coder';
 
-const ZOOM_THRESHOLD_DISTRICT = 12;
-const ZOOM_THRESHOLD_CITY = 8;
-
-export const BUCKET_SIZES = {
-    [ScaleLevel.DISTRICT]: 0.04,
-    [ScaleLevel.CITY]: 0.2,
-    [ScaleLevel.WORLD]: 0
-};
-
-export const MAJOR_COUNTRIES = [
-    { id: 'CN', name: '中国', lat: 35.8617, lng: 104.1954, radius: 20 },
-    { id: 'US', name: '美国', lat: 37.0902, lng: -95.7129, radius: 25 },
-    { id: 'JP', name: '日本', lat: 36.2048, lng: 138.2529, radius: 8 },
-    { id: 'GB', name: '英国', lat: 55.3781, lng: -3.4360, radius: 5 },
-    { id: 'FR', name: '法国', lat: 46.2276, lng: 2.2137, radius: 6 },
-    { id: 'DE', name: '德国', lat: 51.1657, lng: 10.4515, radius: 5 },
-    { id: 'RU', name: '俄罗斯', lat: 61.5240, lng: 105.3188, radius: 40 },
-    { id: 'IN', name: '印度', lat: 20.5937, lng: 78.9629, radius: 15 },
-    { id: 'BR', name: '巴西', lat: -14.2350, lng: -51.9253, radius: 25 },
-    { id: 'AU', name: '澳大利亚', lat: -25.2744, lng: 133.7751, radius: 20 },
-    { id: 'CA', name: '加拿大', lat: 56.1304, lng: -106.3468, radius: 30 },
-    { id: 'ZA', name: '南非', lat: -30.5595, lng: 22.9375, radius: 10 },
-    { id: 'EG', name: '埃及', lat: 26.8206, lng: 30.8025, radius: 8 },
-    { id: 'KR', name: '韩国', lat: 35.9078, lng: 127.7669, radius: 3 },
-    { id: 'ID', name: '印度尼西亚', lat: -0.7893, lng: 113.9213, radius: 15 },
-    { id: 'MX', name: '墨西哥', lat: 23.6345, lng: -102.5528, radius: 12 },
-    { id: 'TR', name: '土耳其', lat: 38.9637, lng: 35.2433, radius: 8 },
-    { id: 'SA', name: '沙特阿拉伯', lat: 23.8859, lng: 45.0792, radius: 12 },
-    { id: 'AR', name: '阿根廷', lat: -38.4161, lng: -63.6167, radius: 15 },
-    { id: 'NG', name: '尼日利亚', lat: 9.0820, lng: 8.6753, radius: 7 },
-];
+// H3 Resolutions
+const RESOLUTION_CITY = 4;      // ~22km edge
+const RESOLUTION_DISTRICT = 6;  // ~3.6km edge
 
 export const getScaleLevel = (zoom: number): ScaleLevel => {
-    if (zoom >= ZOOM_THRESHOLD_DISTRICT) return ScaleLevel.DISTRICT;
-    if (zoom >= ZOOM_THRESHOLD_CITY) return ScaleLevel.CITY;
-    return ScaleLevel.WORLD;
+    if (zoom < 6) return ScaleLevel.WORLD;
+    if (zoom < 12) return ScaleLevel.CITY;
+    return ScaleLevel.DISTRICT;
 };
 
-const snapToGrid = (coord: number, size: number): string => (Math.floor(coord / size) * size).toFixed(3);
-
-export const getNearestCountry = (lat: number, lng: number) => {
-    let closest = MAJOR_COUNTRIES[0];
-    let minDist = Number.MAX_VALUE;
-    for (const c of MAJOR_COUNTRIES) {
-        const dist = Math.sqrt(Math.pow(lat - c.lat, 2) + Math.pow(lng - c.lng, 2));
-        if (dist < minDist) { minDist = dist; closest = c; }
-    }
-    return closest;
-};
-
-export const getBucket = (lat: number, lng: number, scale: ScaleLevel) => {
-    if (scale === ScaleLevel.WORLD) return getNearestCountry(lat, lng);
-    const size = BUCKET_SIZES[scale];
-    const snapLat = Math.floor(lat / size) * size + (size / 2);
-    const snapLng = Math.floor(lng / size) * size + (size / 2);
-    return { lat: snapLat, lng: snapLng };
-};
-
-export const getRoomId = (location: LocationState): string => {
-    const scale = getScaleLevel(location.zoom);
+export const getRoomId = (scale: ScaleLevel, lat: number, lng: number): string => {
     if (scale === ScaleLevel.WORLD) return 'world_global';
-    const size = BUCKET_SIZES[scale];
-    const prefix = scale === ScaleLevel.DISTRICT ? 'district' : 'city';
-    return `${prefix}_${snapToGrid(location.lat, size)}_${snapToGrid(location.lng, size)}`;
+
+    try {
+        const resolution = scale === ScaleLevel.CITY ? RESOLUTION_CITY : RESOLUTION_DISTRICT;
+        const h3Index = h3.latLngToCell(lat, lng, resolution);
+        return `${scale.toLowerCase()}_${h3Index}`;
+    } catch (e) {
+        console.error('H3 conversion failed:', e);
+        return 'world_global';
+    }
+};
+
+export const getBucket = (lat: number, lng: number, scale: ScaleLevel): string => {
+    return getRoomId(scale, lat, lng);
+};
+
+export const BUCKET_SIZES = {
+    [ScaleLevel.WORLD]: 0,
+    [ScaleLevel.CITY]: 0, // Not used with H3
+    [ScaleLevel.DISTRICT]: 0 // Not used with H3
+};
+
+// --- Country & Location Helpers ---
+
+export const getCountryCode = (lat: number, lng: number): string | undefined => {
+    try {
+        // country-coder returns ISO 3166-1 alpha-2 code
+        return iso1A2Code([lng, lat]) || undefined;
+    } catch (e) {
+        console.error('Country detection failed:', e);
+        return undefined;
+    }
+};
+
+const regionNames = new Intl.DisplayNames(['zh-CN'], { type: 'region' });
+
+export const getCountryNameCN = (code?: string): string => {
+    if (!code) return '未知';
+    try {
+        return regionNames.of(code) || code;
+    } catch (e) {
+        return code;
+    }
+};
+
+// Helper to get formatted location name for header
+// Returns [Country, City, District] based on H3 index or raw coords
+export const getLocationName = async (lat: number, lng: number, scale: ScaleLevel): Promise<string> => {
+    const countryCode = getCountryCode(lat, lng);
+    const countryName = getCountryNameCN(countryCode);
+
+    if (scale === ScaleLevel.WORLD) {
+        return countryName;
+    }
+
+    // For City/District, we ideally need reverse geocoding.
+    // Since we want "offline-first" where possible, but for city names we really need data.
+    // We will try a lightweight fetch to OSM Nominatim (free, no key) as a fallback enhancement.
+    // If offline or fail, we fallback to H3 Index ID for tech feel.
+
+    try {
+        const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=${scale === ScaleLevel.CITY ? 10 : 14}&accept-language=zh-CN`);
+        if (!resp.ok) throw new Error('Network error');
+        const data = await resp.json();
+        const address = data.address;
+
+        const city = address.city || address.town || address.state || '';
+        const district = address.suburb || address.district || address.neighbourhood || '';
+
+        if (scale === ScaleLevel.CITY) {
+            return `${countryName} - ${city || '未知城市'}`;
+        } else {
+            return `${countryName} - ${city || '未知城市'} - ${district || '未知区域'}`;
+        }
+    } catch (e) {
+        // Fallback: H3 Index
+        const res = scale === ScaleLevel.CITY ? RESOLUTION_CITY : RESOLUTION_DISTRICT;
+        const h3Index = h3.latLngToCell(lat, lng, res);
+        return `${countryName} - [${h3Index}]`;
+    }
 };
