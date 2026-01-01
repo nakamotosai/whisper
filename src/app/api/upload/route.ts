@@ -6,6 +6,8 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'edge';
+
 // Initialize S3 client for R2
 const R2 = new S3Client({
     region: 'auto',
@@ -42,14 +44,15 @@ export async function POST(request: NextRequest) {
         const folder = fileType === 'voice' ? 'voice_messages' : 'chat_images';
         const fileName = `${folder}/${timestamp}_${randomId}.${extension}`;
 
-        // Convert file to buffer
-        const buffer = Buffer.from(await file.arrayBuffer());
+        // Convert file to Uint8Array (Standard Web API compatible with Edge Runtime)
+        const arrayBuffer = await file.arrayBuffer();
+        const fileBytes = new Uint8Array(arrayBuffer);
 
         // Upload to R2
         await R2.send(new PutObjectCommand({
             Bucket: BUCKET_NAME,
             Key: fileName,
-            Body: buffer,
+            Body: fileBytes,
             ContentType: file.type || 'application/octet-stream',
         }));
 
