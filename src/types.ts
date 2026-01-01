@@ -1,0 +1,70 @@
+export enum ScaleLevel {
+    DISTRICT = 'DISTRICT', // Zoom 13
+    CITY = 'CITY',       // Zoom 10
+    WORLD = 'WORLD'      // Zoom 4
+}
+
+export type SubTabType = 'CHAT' | 'IMAGES';
+
+export interface User {
+    id: string;
+    avatarSeed: string;
+    name: string;
+}
+
+export interface Message {
+    id: string;
+    userId: string;
+    userName: string;
+    userAvatarSeed: string;
+    content: string; // Text or Emoji
+    timestamp: number;
+    type: 'text' | 'emoji' | 'voice' | 'image';
+}
+
+export interface RoomStats {
+    occupancy: number;
+    activityLevel: 'low' | 'medium' | 'high';
+}
+
+export interface AIAtmosphere {
+    mood: string;
+    summary: string;
+    keywords: string[];
+    color: string; // Hex code suggesting mood
+}
+
+export interface LocationState {
+    lat: number;
+    lng: number;
+    zoom: number;
+}
+
+export interface ActivityMarker {
+    id: string;
+    lat: number;
+    lng: number;
+    type: 'USER' | 'HOTSPOT' | 'CENTROID';
+    intensity?: number; // 0-1
+    label?: string;
+}
+
+export interface LiveStream {
+    id: string;
+    hostName: string;
+    title: string;
+    listeners: number;
+    tags: string[];
+    lat: number;
+    lng: number;
+}
+
+export interface SharedImage {
+    id: string;
+    url: string;
+    caption: string;
+    author: string;
+    likes: number;
+    lat: number;
+    lng: number;
+}
