@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, memo, useMemo, useCallback } from '
 import { MapContainer, TileLayer, useMap, Marker, Polygon, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { LocationState, ActivityMarker, ScaleLevel } from '@/types';
+import { LocationState, ActivityMarker, ScaleLevel, ThemeType, UserPresence } from '@/types';
 import { getScaleLevel, getH3Boundary, getH3Center, getUserH3Index } from '@/lib/spatialService';
 import * as h3 from 'h3-js';
 
@@ -381,10 +381,12 @@ interface MapBackgroundProps {
     onMarkerClick: (marker: ActivityMarker) => void;
     forcedZoom: number | null;
     fetchActivity: (lat: number, lng: number, zoom: number) => Promise<ActivityMarker[]>;
-    theme: 'dark' | 'light';
+    theme?: ThemeType;
     existingRoomIds?: string[];
     onHexClick?: (roomId: string, lat: number, lng: number) => void;
     activeRoomId?: string;
+    onlineUsers?: UserPresence[];
+    currentUserId?: string;
 }
 
 export const MapBackground = memo(({
@@ -394,10 +396,12 @@ export const MapBackground = memo(({
     onMarkerClick,
     forcedZoom,
     fetchActivity,
-    theme,
+    theme = 'dark',
     existingRoomIds = [],
     onHexClick,
-    activeRoomId
+    activeRoomId,
+    onlineUsers,
+    currentUserId
 }: MapBackgroundProps) => {
     const [zoom, setZoom] = useState(5);
     const [isMoving, setIsMoving] = useState(false);
@@ -548,8 +552,28 @@ export const MapBackground = memo(({
 
                 {fuzzedLocation && (
                     <>
+                        {/* Self marker */}
                         <UserHexagon location={userLocation as [number, number]} zoom={zoom} isHidden={isMoving} />
                         <Marker position={fuzzedLocation as [number, number]} icon={selfIcon(activeConfig.hex)} zIndexOffset={1001} />
+
+                        {/* Other online users markers - Hide when moving */}
+                        {!isMoving && onlineUsers && onlineUsers.map(u => {
+                            if (u.user_id === currentUserId) return null;
+                            if (typeof u.lat !== 'number' || typeof u.lng !== 'number') return null;
+                            return (
+                                <CircleMarker
+                                    key={`user-${u.user_id}`}
+                                    center={[u.lat, u.lng]}
+                                    radius={3}
+                                    pathOptions={{
+                                        fillColor: '#ffffff',
+                                        fillOpacity: 0.8,
+                                        stroke: false,
+                                        className: 'online-user-dot'
+                                    }}
+                                />
+                            );
+                        })}
                     </>
                 )}
             </MapContainer>

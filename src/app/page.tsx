@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { ChatInterface } from '@/components/ChatInterface';
-import { LocationState, Message, User, ScaleLevel, ActivityMarker, ThemeType } from '@/types';
+import { LocationState, ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType, ActivityMarker, RoomStats, UserPresence } from '@/types';
 import { getRoomId, getScaleLevel, getBucket, BUCKET_SIZES, getLocationName, getCountryCode, canJoinHex } from '@/lib/spatialService';
 import { uploadImage, uploadVoice } from '@/lib/r2Storage';
 import dynamic from 'next/dynamic';
@@ -68,6 +68,12 @@ export default function Home() {
     [ScaleLevel.DISTRICT]: 0,
     [ScaleLevel.CITY]: 0,
     [ScaleLevel.WORLD]: 0
+  });
+
+  const [onlineUsers, setOnlineUsers] = useState<Record<ScaleLevel, UserPresence[]>>({
+    [ScaleLevel.DISTRICT]: [],
+    [ScaleLevel.CITY]: [],
+    [ScaleLevel.WORLD]: []
   });
 
   const [chatAnchor, setChatAnchor] = useState<[number, number] | null>([location.lat, location.lng]);
@@ -163,11 +169,16 @@ export default function Home() {
       // Use visualViewport for accurate mobile viewport (handles keyboard)
       if (window.visualViewport) {
         setViewportHeight(`${window.visualViewport.height}px`);
+        // If the keyboard is forcing a scroll, reset it
+        if (window.scrollY > 0) {
+          window.scrollTo(0, 0);
+        }
       } else {
         setViewportHeight(`${window.innerHeight}px`);
       }
     };
     window.addEventListener('resize', handleResize);
+    window.addEventListener('scroll', () => { if (window.scrollY > 0) window.scrollTo(0, 0); }); // Aggressive scroll lock
     // Listen to both resize and scroll on visualViewport for iOS keyboard
     window.visualViewport?.addEventListener('resize', handleResize);
     window.visualViewport?.addEventListener('scroll', handleResize);
@@ -297,6 +308,28 @@ export default function Home() {
     setAllMessages(prev => ({ ...prev, [activeScale]: [] }));
   }, [userGps, activeScale]);
 
+  // Suggestion Board Sync & Realtime
+  useEffect(() => {
+    if (!showSuggestionPanel || !supabase) return;
+
+    // Initial Fetch
+    supabase.from('suggestions').select('*').order('timestamp', { ascending: false }).limit(50).then(({ data }) => {
+      if (data) setSuggestions(data);
+    });
+
+    // Realtime Subscription
+    const channel = supabase.channel('suggestions_board')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'suggestions' }, (payload) => {
+        setSuggestions(prev => {
+          if (prev.some(s => s.id === payload.new.id)) return prev;
+          return [payload.new as any, ...prev].slice(0, 50);
+        });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [showSuggestionPanel]);
+
   useEffect(() => {
     if (!mounted || !supabase) return;
     Object.values(channelsRef.current).forEach(c => supabase!.removeChannel(c));
@@ -327,8 +360,24 @@ export default function Home() {
         if (payload.new.is_recalled) {
           setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.new.id ? { ...m, isRecalled: true } : m) }));
         }
+      }).on('presence', { event: 'sync' }, () => {
+        const newState = channel.presenceState();
+        const users: UserPresence[] = [];
+        for (const key in newState) {
+          users.push(...(newState[key] as any));
+        }
+        setOnlineUsers(prev => ({ ...prev, [scale]: users }));
       }).subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') await channel.track({ user: currentUser });
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: currentUser.id,
+            user_name: currentUser.name,
+            avatarSeed: currentUser.avatarSeed,
+            lat: userGps ? userGps[0] : location.lat,
+            lng: userGps ? userGps[1] : location.lng,
+            onlineAt: Date.now()
+          });
+        }
         // Reconnect logic handles itself via the useEffect dependency on reconnectCounter,
         // which will teardown and recreate this subscription.
         console.log(`Channel room_${rid} status:`, status);
@@ -553,6 +602,8 @@ export default function Home() {
           existingRoomIds={existingRoomIds}
           onHexClick={handleHexClick}
           activeRoomId={roomIds[activeScale]}
+          onlineUsers={onlineUsers[activeScale]}
+          currentUserId={currentUser.id}
         />
       </div>
 
@@ -637,7 +688,32 @@ export default function Home() {
         onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
         onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
       >
-        <ChatInterface scale={activeScale} roomId={roomIds[activeScale]} messages={allMessages[activeScale] || []} unreadCounts={unreadCounts} user={currentUser} onSendMessage={onSendMessage} onUploadImage={onUploadImage} onUploadVoice={onUploadVoice} onRecallMessage={onRecallMessage} fetchLiveStreams={async () => []} fetchSharedImages={async () => []} isOpen={!isMobile || isChatOpen} onToggle={() => setIsChatOpen(false)} isMobile={isMobile} onTabChange={onTabChange} locationName={locationName} onOpenSettings={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} onUpdateUser={(data) => { if (data.name) { setCurrentUser(prev => ({ ...prev, name: data.name! })); localStorage.setItem('whisper_user_name', data.name!); } }} theme={theme} />
+        <ChatInterface
+          scale={activeScale}
+          roomId={roomIds[activeScale]}
+          messages={allMessages[activeScale] || []}
+          unreadCounts={unreadCounts}
+          user={currentUser}
+          onSendMessage={onSendMessage}
+          onUploadImage={onUploadImage}
+          onUploadVoice={onUploadVoice}
+          onRecallMessage={onRecallMessage}
+          fetchLiveStreams={async () => []}
+          fetchSharedImages={async () => []}
+          isOpen={!isMobile || isChatOpen}
+          onToggle={() => setIsChatOpen(false)}
+          isMobile={isMobile}
+          onTabChange={onTabChange}
+          locationName={locationName}
+          onOpenSettings={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }}
+          onUpdateUser={(data) => { if (data.name) { setCurrentUser(prev => ({ ...prev, name: data.name! })); localStorage.setItem('whisper_user_name', data.name!); } }}
+          theme={theme}
+          onlineCounts={{
+            [ScaleLevel.DISTRICT]: onlineUsers[ScaleLevel.DISTRICT].length,
+            [ScaleLevel.CITY]: onlineUsers[ScaleLevel.CITY].length,
+            [ScaleLevel.WORLD]: onlineUsers[ScaleLevel.WORLD].length
+          }}
+        />
       </div>
       <style>{`
                 .crystal-nav-vertical { position: relative; background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.3)'}; backdrop-filter: blur(12px); border-radius: 20px; border: 1.5px solid transparent; }

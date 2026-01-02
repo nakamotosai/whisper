@@ -72,3 +72,12 @@ export interface SharedImage {
     lat: number;
     lng: number;
 }
+
+export interface UserPresence {
+    user_id: string;
+    user_name: string;
+    avatarSeed: string;
+    lat: number;
+    lng: number;
+    onlineAt: number;
+}
