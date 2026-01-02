@@ -47,6 +47,7 @@ export default function Home() {
   const [locationName, setLocationName] = useState<string>('');
   const [theme, setTheme] = useState<ThemeType>('dark');
   const [viewportHeight, setViewportHeight] = useState('100vh');
+  const [fontSize, setFontSize] = useState(16);
   const [reconnectCounter, setReconnectCounter] = useState(0);
 
   // Chat Panel Resize State
@@ -178,7 +179,9 @@ export default function Home() {
           (err) => {
             console.error('Geolocation failed:', err);
             setIsLocating(false);
-            alert('获取位置失败，请检查浏览器权限。');
+            const fallback = getSmartInitialLocation();
+            executeRelocation([fallback.lat, fallback.lng]);
+            alert(`获取准确位置失败，已根据您的时区自动定位到${fallback === JAPAN_DEFAULT ? '日本' : fallback === CHINA_DEFAULT ? '中国' : '附近区域'}。`);
           },
           { enableHighAccuracy: true, timeout: 10000 }
         );
@@ -206,13 +209,7 @@ export default function Home() {
     const handleResize = () => {
       checkMobile();
       if (window.visualViewport) {
-        // Force the app to match the visible viewport height
         setViewportHeight(`${window.visualViewport.height}px`);
-
-        // Anti-White-Screen: Force scroll to top to prevent browser from "drifting" the container up
-        if (window.scrollY !== 0) {
-          window.scrollTo(0, 0);
-        }
       } else {
         setViewportHeight(`${window.innerHeight}px`);
       }
@@ -231,6 +228,9 @@ export default function Home() {
     const storedTheme = localStorage.getItem('whisper_theme') as ThemeType;
     if (storedTheme) setTheme(storedTheme);
     else setTheme('dark');
+
+    const storedFontSize = localStorage.getItem('whisper_font_size');
+    if (storedFontSize) setFontSize(parseInt(storedFontSize));
 
     const storedWidth = localStorage.getItem('whisper_chat_width');
     if (storedWidth && !isMobile) setChatWidth(parseInt(storedWidth));
@@ -910,9 +910,9 @@ export default function Home() {
           <div className="absolute inset-0 rounded-full blur-md bg-white/10 animate-pulse" />
         </div>
         <div className="flex flex-col gap-3">
-          <span className="text-white font-black tracking-[0.2em] uppercase text-sm">正在请求地理位置...</span>
+          <span className="text-white font-normal tracking-[0.2em] uppercase text-sm">正在请求地理位置...</span>
           <div className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl">
-            <span className="text-white/50 text-[10px] font-bold leading-relaxed uppercase tracking-widest">
+            <span className="text-white/50 text-[10px] font-normal leading-relaxed uppercase tracking-widest">
               隐私保护已激活：系统将对您的真实坐标添加约2公里的随机偏移，确保您的精确驻地不被公开。
             </span>
           </div>
@@ -922,7 +922,7 @@ export default function Home() {
   );
 
   return (
-    <div className="flex w-screen bg-black overflow-hidden select-none relative flex-col" style={{ height: viewportHeight }} suppressHydrationWarning>
+    <div className="fixed inset-0 bg-black overflow-hidden select-none" suppressHydrationWarning>
       {isLocatingOverlay}
       {showUnifiedSettings && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 backdrop-blur-md bg-black/40">
@@ -937,35 +937,55 @@ export default function Home() {
             <div className="flex flex-col gap-1 px-1">
               <div className="flex items-center gap-2">
                 <img src="/logo.png" onClick={handleLogoClick} className="w-6 h-6 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
-                <h3 className="text-white text-xs font-black uppercase tracking-widest opacity-50">乌托邦</h3>
+                <h3 className="text-white text-xs font-normal uppercase tracking-widest opacity-50">乌托邦</h3>
               </div>
-              <p className="text-white/35 text-[9px] font-bold uppercase tracking-wider">Privacy secured with 2km random offset</p>
+              <p className="text-white/35 text-[9px] font-normal uppercase tracking-wider">Privacy secured with 2km random offset</p>
             </div>
 
             <form onSubmit={handleSettingsSubmit} className="flex flex-col gap-3.5 pt-1">
-              <input type="text" maxLength={12} placeholder="在这更改昵称" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white font-bold outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/35 text-sm" value={tempName} onChange={(e) => setTempName(e.target.value)} autoFocus />
+              <input type="text" maxLength={12} placeholder="在这更改昵称" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white font-normal outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/35 text-sm" value={tempName} onChange={(e) => setTempName(e.target.value)} autoFocus />
               <div className="grid grid-cols-2 gap-2.5 select-none">
                 <div onClick={() => setTheme('dark')} className={`py-2 px-4 rounded-xl border flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95 ${theme === 'dark' ? 'bg-white/10 border-white/20' : 'bg-transparent border-white/5 opacity-50 hover:opacity-80'}`}>
-                  <div className="w-5 h-5 rounded-full bg-[#1a1a1a] border border-white/20 shadow-[0_0_100px_rgba(255,255,255,0.1)] flex-shrink-0" /><span className="text-[11px] font-black text-white/80 tracking-widest uppercase">深色</span>
+                  <div className="w-5 h-5 rounded-full bg-[#1a1a1a] border border-white/20 shadow-[0_0_100px_rgba(255,255,255,0.1)] flex-shrink-0" /><span className="text-[11px] font-normal text-white/80 tracking-widest uppercase">深色</span>
                 </div>
                 <div onClick={() => setTheme('light')} className={`py-2 px-4 rounded-xl border flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95 ${theme === 'light' ? 'bg-white border-white text-black' : 'bg-transparent border-white/5 opacity-50 hover:opacity-80'}`}>
-                  <div className="w-5 h-5 rounded-full bg-white border border-gray-200 shadow-sm flex-shrink-0" /><span className={`text-[11px] font-black tracking-widest uppercase ${theme === 'light' ? 'text-black' : 'text-white/80'}`}>浅色</span>
+                  <div className="w-5 h-5 rounded-full bg-white border border-gray-200 shadow-sm flex-shrink-0" /><span className={`text-[11px] font-normal tracking-widest uppercase ${theme === 'light' ? 'text-black' : 'text-white/80'}`}>浅色</span>
                 </div>
+              </div>
+
+              <div className="flex flex-col gap-2 p-1">
+                <div className="flex items-center justify-between text-[11px] font-normal text-white/40 uppercase tracking-widest px-1">
+                  <span>文字大小</span>
+                  <span>{fontSize}px</span>
+                </div>
+                <input
+                  type="range"
+                  min="12"
+                  max="24"
+                  step="1"
+                  value={fontSize}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    setFontSize(val);
+                    localStorage.setItem('whisper_font_size', val.toString());
+                  }}
+                  className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+                />
               </div>
 
               <div className="p-3 bg-white/5 border border-white/10 rounded-2xl flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                  <span className="text-[10px] font-black text-white/70 uppercase tracking-widest">隐私保护说明</span>
+                  <span className="text-[10px] font-normal text-white/70 uppercase tracking-widest">隐私保护说明</span>
                 </div>
-                <p className="text-[10px] text-white/45 font-bold leading-relaxed lowercase tracking-wide">
+                <p className="text-[10px] text-white/45 font-normal leading-relaxed lowercase tracking-wide">
                   为了保护您的驻地隐私，系统已自动为您的实时位置添加约 **2公里** 的随机偏移。这意味着即使在"地区"频道中，其他用户也无法精确推断您的真实住所。
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
-                <button type="button" onClick={() => setShowSuggestionPanel(true)} className="w-full py-2.5 bg-white/5 text-white/50 font-black uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:bg-white/10 border border-white/5 text-xs">提建议</button>
-                <button type="submit" className="w-full py-2.5 bg-white text-black font-black uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:shadow-[0_0_30_px_rgba(255,255,255,0.3)] shadow-xl text-xs">保存</button>
+                <button type="button" onClick={() => setShowSuggestionPanel(true)} className="w-full py-2.5 bg-white/5 text-white/50 font-normal uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:bg-white/10 border border-white/5 text-xs">提建议</button>
+                <button type="submit" className="w-full py-2.5 bg-white text-black font-normal uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:shadow-[0_0_30_px_rgba(255,255,255,0.3)] shadow-xl text-xs">保存</button>
               </div>
             </form>
           </div>
@@ -978,9 +998,9 @@ export default function Home() {
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-3">
                   <img src="/logo.png" onClick={handleLogoClick} className="w-8 h-8 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
-                  <h2 className="text-lg font-black text-white tracking-widest uppercase">进化建议看板</h2>
+                  <h2 className="text-lg font-normal text-white tracking-widest uppercase">进化建议看板</h2>
                 </div>
-                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className="text-[10px] font-black text-white/50 uppercase tracking-widest">实时接收其他特工建议</span></div>
+                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className="text-[10px] font-normal text-white/50 uppercase tracking-widest">实时接收其他特工建议</span></div>
               </div>
               <button onClick={() => setShowSuggestionPanel(false)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-all border border-white/5">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -989,15 +1009,15 @@ export default function Home() {
             <div ref={suggestionScrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth custom-scrollbar overscroll-contain">
               {suggestions.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-white/20 underline uppercase tracking-widest">暂无建议</div> : suggestions.map((s, idx) => (
                 <div key={s.id || idx} className={`flex flex-col gap-2 ${s.user_id === currentUser.id ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-2 px-1"><span className="text-[10px] font-black text-white/40 uppercase tracking-widest">{s.user_id === currentUser.id ? '我' : s.user_name}</span><span className="text-[8px] font-medium text-white/20">{s.timestamp ? formatDistanceToNow(new Date(s.timestamp), { addSuffix: true, locale: zhCN }) : '刚刚'}</span></div>
-                  <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] font-medium leading-relaxed border shadow-sm ${s.user_id === currentUser.id ? 'bg-white/15 border-white/30 text-white rounded-tr-none' : 'bg-white/5 border-white/10 text-white/80 rounded-tl-none'}`}>{s.content}</div>
+                  <div className="flex items-center gap-2 px-1"><span className="text-[10px] font-normal text-white/40 uppercase tracking-widest">{s.user_id === currentUser.id ? '我' : s.user_name}</span><span className="text-[8px] font-normal text-white/20">{s.timestamp ? formatDistanceToNow(new Date(s.timestamp), { addSuffix: true, locale: zhCN }) : '刚刚'}</span></div>
+                  <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] font-normal leading-relaxed border shadow-sm ${s.user_id === currentUser.id ? 'bg-white/15 border-white/30 text-white rounded-tr-none' : 'bg-white/5 border-white/10 text-white/80 rounded-tl-none'}`}>{s.content}</div>
                 </div>
               ))}
             </div>
             <div className="p-6 bg-black/40 border-t border-white/10 backdrop-blur-2xl">
               <form onSubmit={handleSuggestionSubmit} className="flex flex-col gap-4">
-                <textarea className="w-full h-24 bg-white/5 border border-white/10 rounded-2xl p-4 text-white font-medium outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/20 resize-none text-sm leading-relaxed" placeholder="输入建议..." value={suggestionText} onChange={(e) => setSuggestionText(e.target.value)} />
-                <button type="submit" disabled={isSubmittingSuggestion || !suggestionText.trim()} className={`w-full py-4 rounded-xl font-black uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-3 ${suggestionStatus === 'success' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-white text-black hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] shadow-xl'}`}>{isSubmittingSuggestion ? '发送中...' : suggestionStatus === 'success' ? '已发送' : '发送进化建议'}</button>
+                <textarea className="w-full h-24 bg-white/5 border border-white/10 rounded-2xl p-4 text-white font-normal outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/20 resize-none text-sm leading-relaxed" placeholder="输入建议..." value={suggestionText} onChange={(e) => setSuggestionText(e.target.value)} />
+                <button type="submit" disabled={isSubmittingSuggestion || !suggestionText.trim()} className={`w-full py-4 rounded-xl font-normal uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-3 ${suggestionStatus === 'success' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-white text-black hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] shadow-xl'}`}>{isSubmittingSuggestion ? '发送中...' : suggestionStatus === 'success' ? '已发送' : '发送进化建议'}</button>
               </form>
             </div>
           </div>
@@ -1010,21 +1030,21 @@ export default function Home() {
               <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center border border-white/10 mb-2">
                 <svg className="w-6 h-6 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
               </div>
-              <h3 className="text-white text-sm font-black uppercase tracking-[0.3em]">身份验证</h3>
-              <p className="text-white/40 text-[10px] uppercase font-bold tracking-widest text-center">输入秘密协议码以激活超级权限</p>
+              <h3 className="text-white text-base font-normal uppercase tracking-[0.3em]">身份验证</h3>
+              <p className="text-white/40 text-[12px] uppercase font-normal tracking-widest text-center">输入秘密协议码以激活超级权限</p>
             </div>
             <form onSubmit={handleGmLogin} className="flex flex-col gap-4">
               <input
                 type="password"
                 placeholder="密码"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/20 text-center tracking-[0.5em]"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-normal outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/20 text-center tracking-[0.5em]"
                 value={gmPassword}
                 onChange={(e) => setGmPassword(e.target.value)}
                 autoFocus
               />
               <div className="flex gap-2">
-                <button type="button" onClick={() => { setShowGmPrompt(false); setGmPassword(''); }} className="flex-1 py-3 bg-white/5 text-white/40 font-black uppercase tracking-widest rounded-xl text-[10px] border border-white/5">关闭</button>
-                <button type="submit" disabled={isGmLoggingIn} className="flex-1 py-3 bg-white text-black font-black uppercase tracking-widest rounded-xl text-[10px] shadow-xl active:scale-95 transition-all">{isGmLoggingIn ? '验证中...' : '提交'}</button>
+                <button type="button" onClick={() => { setShowGmPrompt(false); setGmPassword(''); }} className="flex-1 py-3 bg-white/5 text-white/40 font-normal uppercase tracking-widest rounded-xl text-[12px] border border-white/5">关闭</button>
+                <button type="submit" disabled={isGmLoggingIn} className="flex-1 py-3 bg-white text-black font-normal uppercase tracking-widest rounded-xl text-[12px] shadow-xl active:scale-95 transition-all">{isGmLoggingIn ? '验证中...' : '提交'}</button>
               </div>
             </form>
           </div>
@@ -1077,7 +1097,7 @@ export default function Home() {
                 alt="UTOPIA Logo"
               />
             </div>
-            <span className={`text-[10px] font-normal tracking-tighter uppercase transition-colors duration-500 ${theme === 'light' ? 'text-black/60' : 'text-white/60'} -mt-1`}>
+            <span className={`text-[12px] font-normal tracking-tighter uppercase transition-colors duration-500 ${theme === 'light' ? 'text-black/60' : 'text-white/60'} -mt-1`}>
               乌托邦 | 全球匿名实时聊天室
             </span>
           </div>
@@ -1095,7 +1115,7 @@ export default function Home() {
           {[{ label: '世界', value: ScaleLevel.WORLD }, { label: '城市', value: ScaleLevel.CITY }, { label: '地区', value: ScaleLevel.DISTRICT }].map(tab => {
             const isActive = activeScale === tab.value; const hasUnread = unreadCounts[tab.value] > 0; const themeColor = tab.value === ScaleLevel.DISTRICT ? '#22d3ee' : tab.value === ScaleLevel.CITY ? '#fbbf24' : '#818cf8';
             return (
-              <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`w-full py-6 flex flex-col items-center justify-center text-[10px] font-black transition-all duration-700 rounded-xl relative ${isActive ? (theme === 'light' ? 'text-gray-900' : 'text-white') : (theme === 'light' ? 'text-black/30 hover:text-black/50' : 'text-white/30 hover:text-white/45')}`}>
+              <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`w-full py-6 flex flex-col items-center justify-center text-[12px] font-normal transition-all duration-700 rounded-xl relative ${isActive ? (theme === 'light' ? 'text-gray-900' : 'text-white') : (theme === 'light' ? 'text-black/30 hover:text-black/50' : 'text-white/30 hover:text-white/45')}`}>
                 {isActive && <div className={`absolute inset-0 rounded-xl border ${theme === 'light' ? 'bg-black/5 border-black/5' : 'bg-white/5 border-white/5'}`} />}
                 <span className="relative z-10 flex flex-col items-center gap-0.5 leading-none">
                   {tab.label.split('').map((char, i) => <span key={i}>{char}</span>)}
@@ -1119,7 +1139,7 @@ export default function Home() {
               className={`h-8 w-auto object-contain transition-all duration-500 ${theme === 'dark' ? 'invert opacity-60' : 'opacity-60'}`}
               alt="UTOPIA Logo"
             />
-            <span className={`text-[9px] font-normal tracking-tighter uppercase transition-colors duration-500 ${theme === 'light' ? 'text-black/60' : 'text-white/60'} -mt-0.5`}>
+            <span className={`text-[11px] font-normal tracking-tighter uppercase transition-colors duration-500 ${theme === 'light' ? 'text-black/60' : 'text-white/60'} -mt-0.5`}>
               乌托邦 | 全球匿名实时聊天室
             </span>
           </div>
@@ -1127,28 +1147,29 @@ export default function Home() {
             <div className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl p-1 rounded-full border border-white/10 shadow-2xl flex items-center">
               {[{ label: '世界', value: ScaleLevel.WORLD }, { label: '城市', value: ScaleLevel.CITY }, { label: '地区', value: ScaleLevel.DISTRICT }].map(tab => {
                 const isActive = activeScale === tab.value;
-                return <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`flex-1 h-full rounded-full text-[11px] font-black tracking-widest uppercase transition-all duration-500 ${isActive ? 'text-white bg-[#333333] shadow-lg' : 'text-white/40'}`}>{tab.label}</button>;
+                return <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`flex-1 h-full rounded-full text-[13px] font-normal tracking-widest uppercase transition-all duration-500 ${isActive ? 'text-white bg-[#333333] shadow-lg' : 'text-white/40'}`}>{tab.label}</button>;
               })}
             </div>
             <button onClick={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/50 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
           </div>
           <div className="w-full max-w-[360px] relative flex items-center justify-center">
-            <button onClick={() => setIsChatOpen(true)} className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl rounded-full border border-white/10 shadow-2xl flex items-center justify-center text-white font-black uppercase tracking-[0.4em] text-[11px] active:scale-95 transition-all">恢复聊天</button>
+            <button onClick={() => setIsChatOpen(true)} className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl rounded-full border border-white/10 shadow-2xl flex items-center justify-center text-white font-black uppercase tracking-[0.4em] text-[13px] active:scale-95 transition-all">恢复聊天</button>
             <button onClick={handleReturnToUser} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/50 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" /></svg></button>
           </div>
         </div>
       )}
       <div
-        className={`fixed z-[1000] overflow-hidden ${isResizing ? 'select-none pointer-events-none' : ''} ${isMobile ? 'transition-all duration-300 ease-out' : 'top-6 right-6 bottom-6 translate-x-0 opacity-100 transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)]'} ${(!isMobile || isChatOpen) ? 'translate-y-0 opacity-100' : (isMobile ? 'translate-y-[120%] opacity-0' : 'translate-x-[120%] opacity-0')}`}
+        className={`fixed z-[1000] overflow-hidden ${isResizing ? 'select-none pointer-events-none' : ''} ${isMobile ? '' : 'top-6 right-6 bottom-6 translate-x-0 opacity-100 transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)]'} ${(!isMobile || isChatOpen) ? 'translate-y-0 opacity-100' : (isMobile ? 'translate-y-[120%] opacity-0' : 'translate-x-[120%] opacity-0')}`}
         style={isMobile ? {
-          top: '0',
-          left: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw',
-          right: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw',
-          height: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? viewportHeight : `calc(${viewportHeight} - 8vw)`,
-          borderRadius: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '32px',
-          marginTop: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw'
+          top: '4vw',
+          left: '4vw',
+          right: '4vw',
+          bottom: `calc(${window.innerHeight}px - ${viewportHeight} + 4vw)`,
+          borderRadius: '32px',
+          transition: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? 'none' : 'bottom 0.3s ease-out, transform 0.3s ease-out, opacity 0.3s ease-out'
         } : {
-          width: `${chatWidth}px`
+          width: `${chatWidth}px`,
+          borderRadius: '40px'
         }}
         onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
         onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
@@ -1181,6 +1202,7 @@ export default function Home() {
           onOpenSettings={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }}
           onUpdateUser={(data) => { if (data.name) { setCurrentUser(prev => ({ ...prev, name: data.name! })); localStorage.setItem('whisper_user_name', data.name!); } }}
           theme={theme}
+          fontSize={fontSize}
           onlineCounts={{
             [ScaleLevel.DISTRICT]: onlineUsers[ScaleLevel.DISTRICT].length,
             [ScaleLevel.CITY]: onlineUsers[ScaleLevel.CITY].length,

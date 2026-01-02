@@ -87,8 +87,8 @@ export const PWAInstaller: React.FC<PWAInstallerProps> = ({ theme = 'dark' }) =>
                         <img src="/logo.png" className="w-full h-full object-contain" alt="Logo" />
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <h3 className="text-sm font-black tracking-widest uppercase">添加 UTOPIA 到界面</h3>
-                        <p className={`text-[11px] font-medium leading-relaxed opacity-60`}>
+                        <h3 className="text-base font-black tracking-widest uppercase">添加 UTOPIA 到界面</h3>
+                        <p className={`text-[13px] font-medium leading-relaxed opacity-60`}>
                             {isIOS ? '从桌面快速访问，享受沉浸式体验' : '安装应用，享受更流畅的匿名聊天'}
                         </p>
                     </div>
@@ -96,12 +96,12 @@ export const PWAInstaller: React.FC<PWAInstallerProps> = ({ theme = 'dark' }) =>
 
                 {isIOS ? (
                     <div className={`flex flex-col gap-3 p-3.5 rounded-2xl ${theme === 'light' ? 'bg-black/5' : 'bg-white/5'}`}>
-                        <div className="flex items-center gap-3 text-[11px] font-bold">
-                            <span className="w-5 h-5 shrink-0 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[10px]">1</span>
+                        <div className="flex items-center gap-3 text-[13px] font-bold">
+                            <span className="w-5 h-5 shrink-0 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[12px]">1</span>
                             <span>请确保是在 <span className="text-blue-500">Safari 浏览器</span> 中打开本站</span>
                         </div>
-                        <div className="flex items-center gap-3 text-[11px] font-bold">
-                            <span className="w-5 h-5 shrink-0 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[10px]">2</span>
+                        <div className="flex items-center gap-3 text-[13px] font-bold">
+                            <span className="w-5 h-5 shrink-0 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[12px]">2</span>
                             <div className="flex items-center gap-1.5 flex-1">
                                 <span>点击底部工具栏的</span>
                                 <div className="p-1 rounded-md bg-white/20 flex items-center justify-center">
@@ -113,8 +113,8 @@ export const PWAInstaller: React.FC<PWAInstallerProps> = ({ theme = 'dark' }) =>
                                 <span>“分享”按钮</span>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3 text-[11px] font-bold">
-                            <span className="w-5 h-5 shrink-0 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[10px]">3</span>
+                        <div className="flex items-center gap-3 text-[13px] font-bold">
+                            <span className="w-5 h-5 shrink-0 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[12px]">3</span>
                             <div className="flex items-center gap-1.5 flex-1">
                                 <span>选择菜单中的</span>
                                 <div className="p-1 rounded-md bg-white/20 flex items-center justify-center">
@@ -131,7 +131,7 @@ export const PWAInstaller: React.FC<PWAInstallerProps> = ({ theme = 'dark' }) =>
                 ) : (
                     <button
                         onClick={handleInstallClick}
-                        className="w-full h-12 rounded-2xl bg-white text-black text-xs font-black tracking-[0.2em] uppercase transition-all active:scale-95 shadow-[0_10px_20px_rgba(255,255,255,0.1)] hover:bg-gray-100"
+                        className="w-full h-12 rounded-2xl bg-white text-black text-sm font-black tracking-[0.2em] uppercase transition-all active:scale-95 shadow-[0_10px_20px_rgba(255,255,255,0.1)] hover:bg-gray-100"
                     >
                         立即安装应用
                     </button>
