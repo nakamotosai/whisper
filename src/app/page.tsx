@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { ChatInterface } from '@/components/ChatInterface';
+import { PWAInstaller } from '@/components/PWAInstaller';
 import { LocationState, ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType, ActivityMarker, RoomStats, UserPresence } from '@/types';
 import { getRoomId, getScaleLevel, getBucket, BUCKET_SIZES, getLocationName, getCountryCode, canJoinHex } from '@/lib/spatialService';
 import { uploadImage, uploadVoice } from '@/lib/r2Storage';
@@ -40,9 +41,6 @@ export default function Home() {
   const [theme, setTheme] = useState<ThemeType>('dark');
   const [viewportHeight, setViewportHeight] = useState('100vh');
   const [reconnectCounter, setReconnectCounter] = useState(0);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const adminTriggerRef = useRef(0);
-  const adminTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Suggestion System
   const [showSuggestionPanel, setShowSuggestionPanel] = useState(false);
@@ -77,6 +75,12 @@ export default function Home() {
     [ScaleLevel.DISTRICT]: [],
     [ScaleLevel.CITY]: [],
     [ScaleLevel.WORLD]: []
+  });
+
+  const [hasMore, setHasMore] = useState<Record<ScaleLevel, boolean>>({
+    [ScaleLevel.DISTRICT]: true,
+    [ScaleLevel.CITY]: true,
+    [ScaleLevel.WORLD]: true
   });
 
   const [chatAnchor, setChatAnchor] = useState<[number, number] | null>([location.lat, location.lng]);
@@ -159,12 +163,8 @@ export default function Home() {
 
     localStorage.setItem('whisper_user_id', id);
     localStorage.setItem('whisper_avatar_seed', seed);
-    if (!storedName) {
-      setShowUnifiedSettings(true);
-      setCurrentUser({ id, avatarSeed: seed, name: '游客' });
-    } else {
-      setCurrentUser({ id, avatarSeed: seed, name: storedName });
-    }
+    if (!storedName) { setShowUnifiedSettings(true); setCurrentUser({ id, avatarSeed: seed, name: '游客' }); }
+    else { setCurrentUser({ id, avatarSeed: seed, name: storedName }); }
 
     const smartLoc = getSmartInitialLocation();
     setLocation(smartLoc);
@@ -301,20 +301,55 @@ export default function Home() {
     if (!userGps) return;
     const h3Index = roomId.split('_')[1];
     if (!h3Index) return;
-    if (!h3Index) return;
-    if (!canJoinHex(userGps[0], userGps[1], h3Index, activeScale) && !isAdmin) {
+    if (!canJoinHex(userGps[0], userGps[1], h3Index, activeScale)) {
       console.warn('Cannot join hex outside range');
       return;
     }
-    // Update room ID for current scale
     setRoomIds(prev => ({ ...prev, [activeScale]: roomId }));
-    // Update chat anchor for display
     setChatAnchor([lat, lng]);
-    // Update location name
     getLocationName(lat, lng, activeScale).then(setLocationName);
-    // Clear messages for this scale to force reload
     setAllMessages(prev => ({ ...prev, [activeScale]: [] }));
+    setHasMore(prev => ({ ...prev, [activeScale]: true }));
   }, [userGps, activeScale]);
+
+  const onLoadMore = useCallback(async (scale: ScaleLevel) => {
+    const rid = roomIds[scale];
+    const msgs = allMessages[scale];
+    if (!supabase || !rid || msgs.length === 0) return;
+
+    const oldestTimestamp = new Date(msgs[0].timestamp).toISOString();
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room_id', rid)
+      .lt('timestamp', oldestTimestamp)
+      .order('timestamp', { ascending: false })
+      .limit(30);
+
+    if (error) {
+      console.error('Fetch more error:', error);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const fetched = data.map((m: any) => ({
+        id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
+        content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true'
+      })).reverse();
+
+      setAllMessages(prev => ({
+        ...prev,
+        [scale]: [...fetched, ...prev[scale]]
+      }));
+
+      if (data.length < 30) {
+        setHasMore(prev => ({ ...prev, [scale]: false }));
+      }
+    } else {
+      setHasMore(prev => ({ ...prev, [scale]: false }));
+    }
+  }, [roomIds, allMessages]);
 
   // Suggestion Board Sync & Realtime
   useEffect(() => {
@@ -346,19 +381,28 @@ export default function Home() {
     scales.forEach(scale => {
       const rid = roomIds[scale];
       if (!rid) return;
-      supabase!.from('messages').select('*').eq('room_id', rid).order('timestamp', { ascending: false }).limit(20).then(({ data }) => {
-        if (data) setAllMessages(prev => {
-          const fetched = data.map((m: any) => ({
-            id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
-            content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true'
-          }));
-          const ids = new Set(prev[scale].map(m => m.id));
-          // Reverse fetched so they are in chronological order (oldest to new), then filter duplicates
-          const chronologicalFetched = fetched.reverse();
-          return { ...prev, [scale]: [...prev[scale], ...chronologicalFetched.filter(m => !ids.has(m.id))].sort((a, b) => a.timestamp - b.timestamp) };
-        });
-      });
 
+      // Load only the latest 30 messages initially
+      supabase!.from('messages')
+        .select('*')
+        .eq('room_id', rid)
+        .order('timestamp', { ascending: false })
+        .limit(30)
+        .then(({ data }) => {
+          if (data) {
+            const fetched = data.map((m: any) => ({
+              id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
+              content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true'
+            })).reverse();
+
+            setAllMessages(prev => ({ ...prev, [scale]: fetched }));
+            if (data.length < 30) {
+              setHasMore(prev => ({ ...prev, [scale]: false }));
+            } else {
+              setHasMore(prev => ({ ...prev, [scale]: true }));
+            }
+          }
+        });
       // CRITICAL FIX: Channel name MUST be constant for all users in the room to share broadcasts.
       // Do NOT include reconnectCounter in the topic.
       const channel = supabase!.channel(`room_${rid}`).on('broadcast', { event: 'chat-message' }, ({ payload }) => {
@@ -370,12 +414,6 @@ export default function Home() {
         // Handle database updates for recall
         if (payload.new.is_recalled) {
           setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.new.id ? { ...m, isRecalled: true } : m) }));
-        }
-      }).on('broadcast', { event: 'admin-action' }, ({ payload }) => {
-        if (payload.type === 'force_rename' && payload.targetUserId === currentUser.id) {
-          setCurrentUser(prev => ({ ...prev, name: payload.newName }));
-          localStorage.setItem('whisper_user_name', payload.newName);
-          alert(`管理员已将您的名字修改为: ${payload.newName}`);
         }
       }).on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState();
@@ -404,82 +442,13 @@ export default function Home() {
     return () => Object.values(channelsRef.current).forEach(c => supabase!.removeChannel(c));
   }, [mounted, roomIds, currentUser, reconnectCounter]);
 
-  // Unique Name Enforcement Effect
-  useEffect(() => {
-    if (!mounted) return;
-
-    // Check conflicts on current active scale (or ideally all connected scales, but active is most important)
-    // We strictly check the current active channel presence.
-    // NOTE: We should probably check ALL scales, but usually users are consistent across scales. 
-    // Let's stick to activeScale for now as it's the visible one, but optimally we check all.
-    // Actually, `onlineUsers` has keys for all scales.
-
-    const checkAndEnforce = (scale: ScaleLevel) => {
-      const users = onlineUsers[scale] || [];
-      const others = users.filter(u => u.user_id !== currentUser.id);
-
-      const isCurrentTaken = others.some(u => u.user_name === currentUser.name);
-
-      // Admin Name Reservation Check
-      if (currentUser.name === '老蔡' && !isAdmin) {
-        console.log(`[Security] '老蔡' is a reserved name. Renaming.`);
-        const newName = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
-        setCurrentUser(prev => ({ ...prev, name: newName }));
-        return true;
-      }
-
-      if (isCurrentTaken) {
-        let newName = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
-        // Simple retry to find unique
-        let retries = 0;
-        while ((others.some(u => u.user_name === newName) || newName === currentUser.name) && retries < 20) {
-          newName = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
-          if (retries > 15) newName += Math.floor(Math.random() * 100);
-          retries++;
-        }
-        console.log(`[Conflict] Name '${currentUser.name}' is taken in ${scale}. Renaming to '${newName}'.`);
-        setCurrentUser(prev => ({ ...prev, name: newName }));
-        return true; // Action taken
-      }
-      return false;
-    };
-
-    if (checkAndEnforce(activeScale)) return;
-
-  }, [onlineUsers, activeScale, currentUser.name, currentUser.id, mounted, isAdmin]);
-
   const handleSettingsSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const finalName = tempName.trim() || RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
-
-    if (finalName === '老蔡' && !isAdmin) {
-      alert('此名字为系统保留名字，无法使用');
-      return;
-    }
-
     setCurrentUser(prev => ({ ...prev, name: finalName }));
     localStorage.setItem('whisper_user_name', finalName);
     localStorage.setItem('whisper_theme', theme);
     setShowUnifiedSettings(false);
-  };
-
-  const handleAdminTrigger = () => {
-    adminTriggerRef.current++;
-    if (adminTimerRef.current) clearTimeout(adminTimerRef.current);
-    adminTimerRef.current = setTimeout(() => adminTriggerRef.current = 0, 1000);
-    if (adminTriggerRef.current >= 5) {
-      setIsAdmin(true);
-      setCurrentUser(prev => ({ ...prev, name: '老蔡' }));
-      localStorage.setItem('whisper_user_name', '老蔡');
-      alert('已进入超级管理员模式');
-      setShowUnifiedSettings(false);
-    }
-  };
-
-  const onAdminRename = async (targetUserId: string, newName: string) => {
-    const rid = roomIds[activeScale];
-    if (!supabase || !rid) return;
-    if (channelsRef.current[rid]) await channelsRef.current[rid].send({ type: 'broadcast', event: 'admin-action', payload: { type: 'force_rename', targetUserId, newName } });
   };
 
   const handleSuggestionSubmit = async (e: React.FormEvent) => {
@@ -585,45 +554,6 @@ export default function Home() {
     </div>
   );
 
-  const handleLoadMore = async () => {
-    const scale = activeScaleRef.current;
-    const rid = roomIds[scale];
-    if (!supabase || !rid) return;
-
-    // Find the oldest message timestamp currently loaded for this scale
-    const currentMessages = allMessages[scale];
-    if (!currentMessages || currentMessages.length === 0) return;
-    const oldestTimestamp = currentMessages[0].timestamp;
-
-    try {
-      const { data } = await supabase.from('messages')
-        .select('*')
-        .eq('room_id', rid)
-        .lt('timestamp', new Date(oldestTimestamp).toISOString()) // Fetch messages older than the oldest one
-        .order('timestamp', { ascending: false })
-        .limit(20);
-
-      if (data && data.length > 0) {
-        setAllMessages(prev => {
-          const fetched = data.map((m: any) => ({
-            id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
-            content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true'
-          }));
-
-          const chronologicalFetched = fetched.reverse();
-
-          const ids = new Set(prev[scale].map(m => m.id));
-          // Prepend new messages, ensuring no duplicates
-          const newMessages = [...chronologicalFetched.filter(m => !ids.has(m.id)), ...prev[scale]];
-
-          return { ...prev, [scale]: newMessages };
-        });
-      }
-    } catch (err) {
-      console.error("Failed to load more messages", err);
-    }
-  };
-
   return (
     <div className="flex w-screen bg-black overflow-hidden select-none relative flex-col touch-none" style={{ height: viewportHeight }}>
       {isLocatingOverlay}
@@ -638,8 +568,8 @@ export default function Home() {
             )}
 
             <div className="flex flex-col gap-1 px-1">
-              <div className="flex items-center gap-2" onClick={handleAdminTrigger}>
-                <img src="/logo.png" className="w-6 h-6 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
+              <div className="flex items-center gap-2">
+                <img src="/logo.png" className="w-6 h-6 object-contain" alt="Logo" />
                 <h3 className="text-white text-xs font-black uppercase tracking-widest opacity-50">乌托邦</h3>
               </div>
               <p className="text-white/35 text-[9px] font-bold uppercase tracking-wider">Privacy secured with 2km random offset</p>
@@ -809,7 +739,7 @@ export default function Home() {
         </div>
       )}
       <div
-        className={`absolute transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)] z-[1000] ${(!isMobile || isChatOpen) ? (isMobile ? 'top-[4vw] left-[4vw] right-[4vw] bottom-[max(4vw,env(safe-area-inset-bottom))]' : 'top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100') : (isMobile ? 'translate-y-[120%] opacity-0' : 'top-6 right-6 bottom-6 w-[360px] translate-x-[120%] opacity-0')}`}
+        className={`fixed transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)] z-[1000] overflow-hidden ${isMobile ? 'rounded-[32px]' : 'rounded-[40px]'} ${(!isMobile || isChatOpen) ? (isMobile ? 'absolute top-[4vw] left-[4vw] right-[4vw] bottom-[max(4vw,env(safe-area-inset-bottom))]' : 'top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100') : (isMobile ? 'absolute translate-y-[120%] opacity-0' : 'top-6 right-6 bottom-6 w-[360px] translate-x-[120%] opacity-0')}`}
         onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
         onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
       >
@@ -823,7 +753,6 @@ export default function Home() {
           onUploadImage={onUploadImage}
           onUploadVoice={onUploadVoice}
           onRecallMessage={onRecallMessage}
-          onLoadMore={handleLoadMore}
           fetchLiveStreams={async () => []}
           fetchSharedImages={async () => []}
           isOpen={!isMobile || isChatOpen}
@@ -839,9 +768,10 @@ export default function Home() {
             [ScaleLevel.CITY]: onlineUsers[ScaleLevel.CITY].length,
             [ScaleLevel.WORLD]: onlineUsers[ScaleLevel.WORLD].length
           }}
-          isAdmin={isAdmin}
-          onAdminRename={onAdminRename}
+          onLoadMore={onLoadMore}
+          hasMore={hasMore[activeScale]}
         />
+        <PWAInstaller theme={theme} />
       </div>
       <style>{`
                 .crystal-nav-vertical { position: relative; background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.3)'}; backdrop-filter: blur(12px); border-radius: 20px; border: 1.5px solid transparent; }

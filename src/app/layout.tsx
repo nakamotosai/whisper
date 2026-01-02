@@ -17,8 +17,12 @@ export const metadata: Metadata = {
   description: "全球匿名实时聊天室 - Privacy secured with 2km random offset",
   manifest: "/manifest.json",
   icons: {
-    icon: "/logo.png",
+    icon: [
+      { url: "/logo.png" },
+      { url: "/logo.png", sizes: "32x32", type: "image/png" },
+    ],
     apple: "/logo.png",
+    shortcut: "/logo.png",
   },
   appleWebApp: {
     capable: true,
