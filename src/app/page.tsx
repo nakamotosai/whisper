@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { ChatInterface } from '@/components/ChatInterface';
 import { LocationState, Message, User, ScaleLevel, ActivityMarker, ThemeType } from '@/types';
-import { getRoomId, getScaleLevel, getBucket, BUCKET_SIZES, getLocationName, getCountryCode } from '@/lib/spatialService';
+import { getRoomId, getScaleLevel, getBucket, BUCKET_SIZES, getLocationName, getCountryCode, canJoinHex } from '@/lib/spatialService';
 import { uploadImage, uploadVoice } from '@/lib/r2Storage';
 import dynamic from 'next/dynamic';
 import * as h3 from 'h3-js';
@@ -48,6 +48,9 @@ export default function Home() {
   const [suggestionStatus, setSuggestionStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const suggestionScrollRef = useRef<HTMLDivElement>(null);
+
+  // Existing chatrooms for hexagon display
+  const [existingRoomIds, setExistingRoomIds] = useState<string[]>([]);
 
   const [allMessages, setAllMessages] = useState<Record<ScaleLevel, Message[]>>({
     [ScaleLevel.DISTRICT]: [],
@@ -157,10 +160,17 @@ export default function Home() {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     const handleResize = () => {
       checkMobile();
-      if (window.visualViewport) setViewportHeight(`${window.visualViewport.height}px`);
+      // Use visualViewport for accurate mobile viewport (handles keyboard)
+      if (window.visualViewport) {
+        setViewportHeight(`${window.visualViewport.height}px`);
+      } else {
+        setViewportHeight(`${window.innerHeight}px`);
+      }
     };
     window.addEventListener('resize', handleResize);
+    // Listen to both resize and scroll on visualViewport for iOS keyboard
     window.visualViewport?.addEventListener('resize', handleResize);
+    window.visualViewport?.addEventListener('scroll', handleResize);
     handleResize();
 
     const handleVisibilityChange = () => { if (document.visibilityState === 'visible') setReconnectCounter(prev => prev + 1); };
@@ -173,6 +183,7 @@ export default function Home() {
     return () => {
       window.removeEventListener('resize', handleResize);
       window.visualViewport?.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('scroll', handleResize);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [getSmartInitialLocation]);
@@ -248,6 +259,43 @@ export default function Home() {
     setForcedZoom(z);
     if (chatAnchor) setLocation({ lat: chatAnchor[0], lng: chatAnchor[1], zoom: z });
   }, [chatAnchor]);
+
+  // Fetch existing chatrooms for hexagon display
+  const fetchExistingRooms = useCallback(async () => {
+    if (!supabase || activeScale === ScaleLevel.WORLD) {
+      setExistingRoomIds([]);
+      return;
+    }
+    const prefix = activeScale.toLowerCase();
+    const { data } = await supabase.from('messages').select('room_id').like('room_id', `${prefix}_%`);
+    if (data) {
+      const uniqueRooms = Array.from(new Set(data.map(d => d.room_id)));
+      setExistingRoomIds(uniqueRooms);
+    }
+  }, [activeScale]);
+
+  useEffect(() => {
+    fetchExistingRooms();
+  }, [activeScale, fetchExistingRooms]);
+
+  // Handle hexagon click to switch chatroom
+  const handleHexClick = useCallback((roomId: string, lat: number, lng: number) => {
+    if (!userGps) return;
+    const h3Index = roomId.split('_')[1];
+    if (!h3Index) return;
+    if (!canJoinHex(userGps[0], userGps[1], h3Index, activeScale)) {
+      console.warn('Cannot join hex outside range');
+      return;
+    }
+    // Update room ID for current scale
+    setRoomIds(prev => ({ ...prev, [activeScale]: roomId }));
+    // Update chat anchor for display
+    setChatAnchor([lat, lng]);
+    // Update location name
+    getLocationName(lat, lng, activeScale).then(setLocationName);
+    // Clear messages for this scale to force reload
+    setAllMessages(prev => ({ ...prev, [activeScale]: [] }));
+  }, [userGps, activeScale]);
 
   useEffect(() => {
     if (!mounted || !supabase) return;
@@ -393,7 +441,7 @@ export default function Home() {
         <div className="flex flex-col gap-3">
           <span className="text-white font-black tracking-[0.2em] uppercase text-sm">正在请求地理位置...</span>
           <div className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl">
-            <span className="text-white/40 text-[10px] font-bold leading-relaxed uppercase tracking-widest">
+            <span className="text-white/50 text-[10px] font-bold leading-relaxed uppercase tracking-widest">
               隐私保护已激活：系统将对您的真实坐标添加约2公里的随机偏移，确保您的精确驻地不被公开。
             </span>
           </div>
@@ -410,7 +458,7 @@ export default function Home() {
           <div className="absolute inset-0" onClick={() => currentUser.name !== '游客' && setShowUnifiedSettings(false)} />
           <div className="w-full max-sm:max-w-none max-w-sm crystal-black-outer p-5 rounded-[32px] container-rainbow-main flex flex-col gap-4 animate-in zoom-in-95 duration-500 relative shadow-[0_0_100px_rgba(0,0,0,0.5)]">
             {currentUser.name !== '游客' && (
-              <button onClick={() => setShowUnifiedSettings(false)} className="absolute top-4 right-4 w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-white/30 hover:text-white transition-all z-50 border border-white/5">
+              <button onClick={() => setShowUnifiedSettings(false)} className="absolute top-4 right-4 w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-all z-50 border border-white/5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             )}
@@ -418,13 +466,13 @@ export default function Home() {
             <div className="flex flex-col gap-1 px-1">
               <div className="flex items-center gap-2">
                 <img src="/logo.png" className="w-6 h-6 object-contain" alt="Logo" />
-                <h3 className="text-white text-xs font-black uppercase tracking-widest opacity-40">乌托邦</h3>
+                <h3 className="text-white text-xs font-black uppercase tracking-widest opacity-50">乌托邦</h3>
               </div>
-              <p className="text-white/20 text-[9px] font-bold uppercase tracking-wider">Privacy secured with 2km random offset</p>
+              <p className="text-white/35 text-[9px] font-bold uppercase tracking-wider">Privacy secured with 2km random offset</p>
             </div>
 
             <form onSubmit={handleSettingsSubmit} className="flex flex-col gap-3.5 pt-1">
-              <input type="text" maxLength={12} placeholder="在这更改昵称" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white font-bold outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/20 text-sm" value={tempName} onChange={(e) => setTempName(e.target.value)} autoFocus />
+              <input type="text" maxLength={12} placeholder="在这更改昵称" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white font-bold outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/35 text-sm" value={tempName} onChange={(e) => setTempName(e.target.value)} autoFocus />
               <div className="grid grid-cols-2 gap-2.5 select-none">
                 <div onClick={() => setTheme('dark')} className={`py-2 px-4 rounded-xl border flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95 ${theme === 'dark' ? 'bg-white/10 border-white/20' : 'bg-transparent border-white/5 opacity-50 hover:opacity-80'}`}>
                   <div className="w-5 h-5 rounded-full bg-[#1a1a1a] border border-white/20 shadow-[0_0_100px_rgba(255,255,255,0.1)] flex-shrink-0" /><span className="text-[11px] font-black text-white/80 tracking-widest uppercase">深色</span>
@@ -437,15 +485,15 @@ export default function Home() {
               <div className="p-3 bg-white/5 border border-white/10 rounded-2xl flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                  <span className="text-[10px] font-black text-white/60 uppercase tracking-widest">隐私保护说明</span>
+                  <span className="text-[10px] font-black text-white/70 uppercase tracking-widest">隐私保护说明</span>
                 </div>
-                <p className="text-[10px] text-white/30 font-bold leading-relaxed lowercase tracking-wide">
-                  为了保护您的驻地隐私，系统已自动为您的实时位置添加约 **2公里** 的随机偏移。这意味着即使在“地区”频道中，其他用户也无法精确推断您的真实住所。
+                <p className="text-[10px] text-white/45 font-bold leading-relaxed lowercase tracking-wide">
+                  为了保护您的驻地隐私，系统已自动为您的实时位置添加约 **2公里** 的随机偏移。这意味着即使在"地区"频道中，其他用户也无法精确推断您的真实住所。
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
-                <button type="button" onClick={() => setShowSuggestionPanel(true)} className="w-full py-2.5 bg-white/5 text-white/40 font-black uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:bg-white/10 border border-white/5 text-xs">提建议</button>
+                <button type="button" onClick={() => setShowSuggestionPanel(true)} className="w-full py-2.5 bg-white/5 text-white/50 font-black uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:bg-white/10 border border-white/5 text-xs">提建议</button>
                 <button type="submit" className="w-full py-2.5 bg-white text-black font-black uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:shadow-[0_0_30_px_rgba(255,255,255,0.3)] shadow-xl text-xs">保存</button>
               </div>
             </form>
@@ -461,23 +509,23 @@ export default function Home() {
                   <img src="/logo.png" className="w-8 h-8 object-contain" alt="Logo" />
                   <h2 className="text-lg font-black text-white tracking-widest uppercase">进化建议看板</h2>
                 </div>
-                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className="text-[10px] font-black text-white/40 uppercase tracking-widest">实时接收其他特工建议</span></div>
+                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className="text-[10px] font-black text-white/50 uppercase tracking-widest">实时接收其他特工建议</span></div>
               </div>
-              <button onClick={() => setShowSuggestionPanel(false)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/30 hover:text-white transition-all border border-white/5">
+              <button onClick={() => setShowSuggestionPanel(false)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-all border border-white/5">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
             <div ref={suggestionScrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth custom-scrollbar overscroll-contain">
-              {suggestions.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-white/10 underline uppercase tracking-widest">暂无建议</div> : suggestions.map((s, idx) => (
+              {suggestions.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-white/20 underline uppercase tracking-widest">暂无建议</div> : suggestions.map((s, idx) => (
                 <div key={s.id || idx} className={`flex flex-col gap-2 ${s.user_id === currentUser.id ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-2 px-1"><span className="text-[10px] font-black text-white/30 uppercase tracking-widest">{s.user_id === currentUser.id ? '我' : s.user_name}</span><span className="text-[8px] font-medium text-white/10">{s.timestamp ? formatDistanceToNow(new Date(s.timestamp), { addSuffix: true, locale: zhCN }) : '刚刚'}</span></div>
+                  <div className="flex items-center gap-2 px-1"><span className="text-[10px] font-black text-white/40 uppercase tracking-widest">{s.user_id === currentUser.id ? '我' : s.user_name}</span><span className="text-[8px] font-medium text-white/20">{s.timestamp ? formatDistanceToNow(new Date(s.timestamp), { addSuffix: true, locale: zhCN }) : '刚刚'}</span></div>
                   <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] font-medium leading-relaxed border shadow-sm ${s.user_id === currentUser.id ? 'bg-white/15 border-white/30 text-white rounded-tr-none' : 'bg-white/5 border-white/10 text-white/80 rounded-tl-none'}`}>{s.content}</div>
                 </div>
               ))}
             </div>
             <div className="p-6 bg-black/40 border-t border-white/10 backdrop-blur-2xl">
               <form onSubmit={handleSuggestionSubmit} className="flex flex-col gap-4">
-                <textarea className="w-full h-24 bg-white/5 border border-white/10 rounded-2xl p-4 text-white font-medium outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/10 resize-none text-sm leading-relaxed" placeholder="输入建议..." value={suggestionText} onChange={(e) => setSuggestionText(e.target.value)} />
+                <textarea className="w-full h-24 bg-white/5 border border-white/10 rounded-2xl p-4 text-white font-medium outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/20 resize-none text-sm leading-relaxed" placeholder="输入建议..." value={suggestionText} onChange={(e) => setSuggestionText(e.target.value)} />
                 <button type="submit" disabled={isSubmittingSuggestion || !suggestionText.trim()} className={`w-full py-4 rounded-xl font-black uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-3 ${suggestionStatus === 'success' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-white text-black hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] shadow-xl'}`}>{isSubmittingSuggestion ? '发送中...' : suggestionStatus === 'success' ? '已发送' : '发送进化建议'}</button>
               </form>
             </div>
@@ -485,9 +533,27 @@ export default function Home() {
         </div>
       )}
       <div className="absolute inset-0 z-0">
-        <MapWithNoSSR initialPosition={[location.lat, location.lng]} userLocation={userGps} onLocationChange={onLocationChange} onMarkerClick={(m: ActivityMarker) => { setChatAnchor([m.lat, m.lng]); setIsChatOpen(true); }} forcedZoom={forcedZoom} fetchActivity={async (la: number, ln: number, z: number) => {
-          if (!supabase) return []; const scale = getScaleLevel(z); if (scale === ScaleLevel.WORLD) return []; const prefix = scale.toLowerCase(); const { data } = await supabase.from('messages').select('room_id').like('room_id', `${prefix}_%`); if (!data) return []; const uni = Array.from(new Set(data.map(d => d.room_id))); return uni.map(rid => { try { const h3Index = rid.split('_')[1]; const [lt, lg] = h3.cellToLatLng(h3Index); return { id: rid, lat: lt, lng: lg }; } catch (e) { return null; } }).filter(Boolean) as ActivityMarker[];
-        }} onScaleChange={onTabChange} theme={theme} />
+        <MapWithNoSSR
+          initialPosition={[location.lat, location.lng]}
+          userLocation={userGps}
+          onLocationChange={onLocationChange}
+          onMarkerClick={(m: ActivityMarker) => { setChatAnchor([m.lat, m.lng]); setIsChatOpen(true); }}
+          forcedZoom={forcedZoom}
+          fetchActivity={async (la: number, ln: number, z: number) => {
+            if (!supabase) return [];
+            const scale = getScaleLevel(z);
+            if (scale === ScaleLevel.WORLD) return [];
+            const prefix = scale.toLowerCase();
+            const { data } = await supabase.from('messages').select('room_id').like('room_id', `${prefix}_%`);
+            if (!data) return [];
+            const uni = Array.from(new Set(data.map(d => d.room_id)));
+            return uni.map(rid => { try { const h3Index = rid.split('_')[1]; const [lt, lg] = h3.cellToLatLng(h3Index); return { id: rid, lat: lt, lng: lg }; } catch (e) { return null; } }).filter(Boolean) as ActivityMarker[];
+          }}
+          theme={theme}
+          existingRoomIds={existingRoomIds}
+          onHexClick={handleHexClick}
+          activeRoomId={roomIds[activeScale]}
+        />
       </div>
 
       {/* Desktop Logo Overlay */}
@@ -517,8 +583,8 @@ export default function Home() {
 
       {!isMobile && (
         <div className="fixed left-6 bottom-6 flex flex-col gap-4 z-[5000]">
-          <button onClick={handleReturnToUser} className={`w-12 h-12 crystal-nav-vertical flex items-center justify-center transition-all shadow-xl group ${theme === 'light' ? 'text-black/40 hover:text-black' : 'text-white/40 hover:text-white'}`}><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" /></svg></button>
-          <button onClick={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} className={`w-12 h-12 crystal-nav-vertical flex items-center justify-center transition-all shadow-xl group ${theme === 'light' ? 'text-black/40 hover:text-black' : 'text-white/40 hover:text-white'}`}><svg className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
+          <button onClick={handleReturnToUser} className={`w-12 h-12 crystal-nav-vertical flex items-center justify-center transition-all shadow-xl group ${theme === 'light' ? 'text-black/50 hover:text-black' : 'text-white/50 hover:text-white'}`}><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" /></svg></button>
+          <button onClick={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} className={`w-12 h-12 crystal-nav-vertical flex items-center justify-center transition-all shadow-xl group ${theme === 'light' ? 'text-black/50 hover:text-black' : 'text-white/50 hover:text-white'}`}><svg className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
         </div>
       )}
       {!isMobile && (
@@ -526,7 +592,7 @@ export default function Home() {
           {[{ label: '世界', value: ScaleLevel.WORLD }, { label: '城市', value: ScaleLevel.CITY }, { label: '地区', value: ScaleLevel.DISTRICT }].map(tab => {
             const isActive = activeScale === tab.value; const hasUnread = unreadCounts[tab.value] > 0; const themeColor = tab.value === ScaleLevel.DISTRICT ? '#22d3ee' : tab.value === ScaleLevel.CITY ? '#fbbf24' : '#818cf8';
             return (
-              <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`w-full py-6 flex flex-col items-center justify-center text-[10px] font-black transition-all duration-700 rounded-xl relative ${isActive ? (theme === 'light' ? 'text-gray-900' : 'text-white') : (theme === 'light' ? 'text-black/20 hover:text-black/40' : 'text-white/10 hover:text-white/20')}`}>
+              <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`w-full py-6 flex flex-col items-center justify-center text-[10px] font-black transition-all duration-700 rounded-xl relative ${isActive ? (theme === 'light' ? 'text-gray-900' : 'text-white') : (theme === 'light' ? 'text-black/30 hover:text-black/50' : 'text-white/30 hover:text-white/45')}`}>
                 {isActive && <div className={`absolute inset-0 rounded-xl border ${theme === 'light' ? 'bg-black/5 border-black/5' : 'bg-white/5 border-white/5'}`} />}
                 <span className="relative z-10 flex flex-col items-center gap-0.5 leading-none">
                   {tab.label.split('').map((char, i) => <span key={i}>{char}</span>)}
@@ -555,18 +621,22 @@ export default function Home() {
             <div className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl p-1 rounded-full border border-white/10 shadow-2xl flex items-center">
               {[{ label: '世界', value: ScaleLevel.WORLD }, { label: '城市', value: ScaleLevel.CITY }, { label: '地区', value: ScaleLevel.DISTRICT }].map(tab => {
                 const isActive = activeScale === tab.value;
-                return <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`flex-1 h-full rounded-full text-[11px] font-black tracking-widest uppercase transition-all duration-500 ${isActive ? 'text-white bg-[#333333] shadow-lg' : 'text-white/20'}`}>{tab.label}</button>;
+                return <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`flex-1 h-full rounded-full text-[11px] font-black tracking-widest uppercase transition-all duration-500 ${isActive ? 'text-white bg-[#333333] shadow-lg' : 'text-white/40'}`}>{tab.label}</button>;
               })}
             </div>
-            <button onClick={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/40 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
+            <button onClick={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/50 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
           </div>
           <div className="w-full max-w-[360px] relative flex items-center justify-center">
             <button onClick={() => setIsChatOpen(true)} className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl rounded-full border border-white/10 shadow-2xl flex items-center justify-center text-white font-black uppercase tracking-[0.4em] text-[11px] active:scale-95 transition-all">恢复聊天</button>
-            <button onClick={handleReturnToUser} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/40 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" /></svg></button>
+            <button onClick={handleReturnToUser} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/50 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" /></svg></button>
           </div>
         </div>
       )}
-      <div className={`fixed transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)] z-[1000] ${(!isMobile || isChatOpen) ? (isMobile ? 'inset-0 p-4 pb-20' : 'top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100') : (isMobile ? 'translate-y-[120%] opacity-0' : 'top-6 right-6 bottom-6 w-[360px] translate-x-[120%] opacity-0')}`}>
+      <div
+        className={`fixed transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)] z-[1000] ${(!isMobile || isChatOpen) ? (isMobile ? 'top-[4vw] left-[4vw] right-[4vw] bottom-[max(4vw,env(safe-area-inset-bottom))]' : 'top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100') : (isMobile ? 'translate-y-[120%] opacity-0' : 'top-6 right-6 bottom-6 w-[360px] translate-x-[120%] opacity-0')}`}
+        onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
+        onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
+      >
         <ChatInterface scale={activeScale} roomId={roomIds[activeScale]} messages={allMessages[activeScale] || []} unreadCounts={unreadCounts} user={currentUser} onSendMessage={onSendMessage} onUploadImage={onUploadImage} onUploadVoice={onUploadVoice} onRecallMessage={onRecallMessage} fetchLiveStreams={async () => []} fetchSharedImages={async () => []} isOpen={!isMobile || isChatOpen} onToggle={() => setIsChatOpen(false)} isMobile={isMobile} onTabChange={onTabChange} locationName={locationName} onOpenSettings={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} onUpdateUser={(data) => { if (data.name) { setCurrentUser(prev => ({ ...prev, name: data.name! })); localStorage.setItem('whisper_user_name', data.name!); } }} theme={theme} />
       </div>
       <style>{`
@@ -574,7 +644,7 @@ export default function Home() {
                 .crystal-nav-vertical::after { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: 0.8; z-index: 10; animation: rainbow-drift 6s linear infinite; }
                 .crystal-black-outer { background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.35)'}; backdrop-filter: blur(12px); }
                 .container-rainbow-main { position: relative; border: 1px solid ${theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255, 255, 255, 0.05)'}; }
-                .container-rainbow-main::after { content: ""; position: absolute; inset: 0; border-radius: 40px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: 0.8; z-index: 50; animation: rainbow-drift 6s linear infinite; }
+                .container-rainbow-main::after { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: 0.8; z-index: 50; animation: rainbow-drift 6s linear infinite; }
                 .bubble-rainbow { position: relative; background: ${theme === 'light' ? 'rgba(255,255,255,0.7)' : 'rgba(26, 26, 26, 0.5)'} !important; backdrop-filter: blur(12px); border-radius: 20px; }
                 .bubble-rainbow::before { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; z-index: 10; animation: rainbow-drift 6s linear infinite; }
                 .bubble-rainbow > * { position: relative; z-index: 1; }

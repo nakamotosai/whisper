@@ -184,7 +184,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
 
     return (
-        <div className={`flex flex-col h-full w-full overflow-hidden transition-all duration-700 relative crystal-black-outer ${isMobile ? 'rounded-[32px]' : 'rounded-[40px]'} container-rainbow-main shadow-[0_20px_50px_rgba(0,0,0,0.5)]`} style={{ transform: 'translateZ(0)' }}>
+        <div
+            className={`flex flex-col h-full w-full overflow-hidden transition-all duration-700 relative crystal-black-outer ${isMobile ? 'rounded-[32px]' : 'rounded-[40px]'} container-rainbow-main shadow-[0_20px_50px_rgba(0,0,0,0.5)]`}
+            style={{ transform: 'translateZ(0)', touchAction: isMobile ? 'pan-y' : 'auto' }}
+            onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
+            onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
+        >
             <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden text-clip">
                 <div className="absolute inset-0 bg-black/20" />
             </div>
@@ -198,7 +203,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             return (
                                 <button key={tab.value} onClick={() => onTabChange(tab.value)}
                                     className={`flex-1 h-7 rounded-[14px] text-[10px] font-black tracking-widest transition-all duration-500 uppercase flex items-center justify-center relative
-                                        ${isActive ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/20 hover:text-white/40')}`}>
+                                        ${isActive ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/40 hover:text-white/60')}`}>
                                     <span className="relative z-20">{tab.label}</span>
                                     {hasUnread && !isActive && (
                                         <div className="absolute top-1 right-2 w-1 h-1 rounded-full bg-red-400 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
@@ -208,7 +213,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         })}
                     </div>
                     {isMobile && (
-                        <button onClick={onToggle} className={`ml-4 w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 border ${theme === 'light' ? 'bg-white/40 text-black/30 hover:text-black border-black/5' : 'bg-white/5 text-white/20 hover:text-white border-white/5'}`}>
+                        <button onClick={onToggle} className={`ml-4 w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 border ${theme === 'light' ? 'bg-white/40 text-black/30 hover:text-black border-black/5' : 'bg-white/5 text-white/40 hover:text-white border-white/5'}`}>
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                         </button>
                     )}
@@ -219,14 +224,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         {['CHAT', 'IMAGES'].map(tab => (
                             <button key={tab} onClick={() => setActiveSubTab(tab as SubTabType)}
                                 className={`flex-1 h-7 rounded-[14px] text-[10px] font-black tracking-widest transition-all duration-500 uppercase flex items-center justify-center relative
-                                    ${activeSubTab === tab ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/20 hover:text-white/40')}`}>
+                                    ${activeSubTab === tab ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/40 hover:text-white/60')}`}>
                                 <span className="relative z-20">{tab === 'CHAT' ? '动态' : '照片'}</span>
                             </button>
                         ))}
                     </div>
                     <button
                         onClick={onOpenSettings}
-                        className={`w-9 h-9 rounded-full flex items-center justify-center transition-all border shrink-0 ${theme === 'light' ? 'text-black/20 hover:text-black/60 hover:bg-black/5 border-black/5 bg-white/40' : 'text-white/10 hover:text-white/60 hover:bg-white/5 border-white/5 bg-white/5'}`}
+                        className={`w-9 h-9 rounded-full flex items-center justify-center transition-all border shrink-0 ${theme === 'light' ? 'text-black/20 hover:text-black/60 hover:bg-black/5 border-black/5 bg-white/40' : 'text-white/35 hover:text-white/70 hover:bg-white/5 border-white/5 bg-white/5'}`}
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -237,7 +242,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                 <div className="flex items-center gap-2 group cursor-default px-1 h-3">
                     <div className="w-1 h-1 rounded-full bg-[#818cf8] shadow-[0_0_8px_#818cf8] animate-pulse" />
-                    <span className={`text-[9px] uppercase font-black tracking-[0.2em] transition-colors ${theme === 'light' ? 'text-black/40 group-hover:text-black/60' : 'text-white/30 group-hover:text-white/50'}`}>{locationName || 'BROADCAST_READY'}</span>
+                    <span className={`text-[9px] uppercase font-black tracking-[0.2em] transition-colors ${theme === 'light' ? 'text-black/40 group-hover:text-black/60' : 'text-white/50 group-hover:text-white/70'}`}>{locationName || 'BROADCAST_READY'}</span>
                 </div>
             </div>
 
@@ -266,7 +271,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             if (msg.isRecalled) {
                                 return (
                                     <div key={msg.id} className="flex justify-center my-1 animate-in fade-in duration-500">
-                                        <span className={`text-[10px] bg-black/5 ${theme === 'light' ? 'text-black/30' : 'text-white/20'} px-3 py-1 rounded-full flex items-center gap-1.5`}>
+                                        <span className={`text-[10px] bg-black/5 ${theme === 'light' ? 'text-black/30' : 'text-white/40'} px-3 py-1 rounded-full flex items-center gap-1.5`}>
                                             <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                             {isOwn ? '你撤回了一条消息' : `${msg.userName} 撤回了一条消息`}
                                         </span>
@@ -277,7 +282,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             return (
                                 <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-700`}>
                                     {isFirstInGroup && (
-                                        <div className={`mb-0.5 px-1 text-[10px] font-black uppercase tracking-widest ${isOwn ? (theme === 'light' ? 'text-black/40' : 'text-white/40') : (theme === 'light' ? 'text-black/30' : 'text-white/20')}`}>
+                                        <div className={`mb-0.5 px-1 text-[10px] font-black uppercase tracking-widest ${isOwn ? (theme === 'light' ? 'text-black/40' : 'text-white/55') : (theme === 'light' ? 'text-black/30' : 'text-white/40')}`}>
                                             {msg.userName || `NODE_${msg.userId.substring(0, 4)}`}
                                             {msg.countryCode && (
                                                 <span className="ml-1 opacity-50 font-normal"> - {getCountryNameCN(msg.countryCode)}</span>
@@ -358,7 +363,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                     </div>
 
                                     {isLastInGroup && (
-                                        <span className={`mt-0.5 px-1 text-[8px] font-black font-mono tracking-widest uppercase ${theme === 'light' ? 'text-black/40' : 'text-white/30'}`}>
+                                        <span className={`mt-0.5 px-1 text-[8px] font-black font-mono tracking-widest uppercase ${theme === 'light' ? 'text-black/40' : 'text-white/45'}`}>
                                             {formatTimeSimple(new Date(msg.timestamp))}
                                         </span>
                                     )}
@@ -382,7 +387,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 activeSubTab === 'CHAT' && (
                     <div className={`shrink-0 z-20 ${isMobile ? 'p-4 pt-1' : 'p-6 pt-1'}`}>
                         <div className={`backdrop-blur-md h-9 rounded-[18px] p-1 border shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center ${theme === 'light' ? 'bg-white/60 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10'}`}>
-                            <button type="button" onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')} className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${inputMode === 'voice' ? 'bg-white text-black shadow-lg scale-105' : (theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black/60 hover:bg-black/10' : 'bg-white/5 text-white/40 hover:text-white/60 hover:bg-white/10')}`}>
+                            <button type="button" onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')} className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${inputMode === 'voice' ? 'bg-white text-black shadow-lg scale-105' : (theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black/60 hover:bg-black/10' : 'bg-white/5 text-white/50 hover:text-white/70 hover:bg-white/10')}`}>
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                                 </svg>
@@ -390,12 +395,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             <div className="flex-1 flex items-center mx-2 h-7 overflow-hidden">
                                 {inputMode === 'text' ? (
                                     <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 h-full">
-                                        <button type="button" onClick={() => fileInputRef.current?.click()} className={`w-6 h-6 rounded-full flex items-center justify-center transition-all shrink-0 text-lg font-light ${theme === 'light' ? 'text-black/20 hover:text-black' : 'text-white/20 hover:text-white'}`}>+</button>
+                                        <button type="button" onClick={() => fileInputRef.current?.click()} className={`w-6 h-6 rounded-full flex items-center justify-center transition-all shrink-0 text-lg font-light ${theme === 'light' ? 'text-black/20 hover:text-black' : 'text-white/40 hover:text-white'}`}>+</button>
                                         <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadImage(f); }} accept="image/*" className="hidden" />
-                                        <input type="text" ref={inputRef} value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="..." className={`flex-1 min-w-0 bg-transparent text-[13px] font-bold focus:outline-none ${theme === 'light' ? 'text-black placeholder:text-black/5' : 'text-white placeholder:text-white/5'}`} disabled={isSending} />
+                                        <input type="text" ref={inputRef} value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="..." className={`flex-1 min-w-0 bg-transparent text-[13px] font-bold focus:outline-none ${theme === 'light' ? 'text-black placeholder:text-black/15' : 'text-white placeholder:text-white/20'}`} disabled={isSending} />
                                     </form>
                                 ) : (
-                                    <button onPointerDown={(e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (e) { } startRecording(); }} onPointerUp={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} onPointerCancel={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} className={`flex-1 h-7 rounded-full font-black tracking-[0.2em] text-[8px] uppercase transition-all select-none touch-none ${isRecording ? 'bg-white text-black animate-pulse scale-[0.98]' : (theme === 'light' ? 'bg-black/5 text-black/20 hover:bg-black/10' : 'bg-white/5 text-white/20 hover:bg-white/10')}`}>
+                                    <button onPointerDown={(e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (e) { } startRecording(); }} onPointerUp={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} onPointerCancel={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} className={`flex-1 h-7 rounded-full font-black tracking-[0.2em] text-[8px] uppercase transition-all select-none touch-none ${isRecording ? 'bg-white text-black animate-pulse scale-[0.98]' : (theme === 'light' ? 'bg-black/5 text-black/20 hover:bg-black/10' : 'bg-white/5 text-white/40 hover:bg-white/10')}`}>
                                         {isRecording ? 'RELEASE' : 'HOLD TO TALK'}
                                     </button>
                                 )}
@@ -413,36 +418,36 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             {/* Viewer Portal */}
             {
                 viewerIndex !== null && typeof document !== 'undefined' && (
-                    <div className="fixed inset-0 z-[99999] flex flex-col transition-all duration-500 bg-black/95 backdrop-blur-3xl" onClick={() => setViewerIndex(null)}>
+                    <div className={`fixed inset-0 z-[99999] flex flex-col transition-all duration-500 backdrop-blur-3xl ${theme === 'light' ? 'bg-white/90' : 'bg-black/80'}`} onClick={() => setViewerIndex(null)}>
                         <div className="absolute top-6 right-6 z-[120] pointer-events-auto">
-                            <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white text-white/60 hover:text-black flex items-center justify-center transition-all border border-white/10 shadow-2xl">
+                            <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border shadow-2xl ${theme === 'light' ? 'bg-black/10 hover:bg-black text-black/60 hover:text-white border-black/10' : 'bg-white/10 hover:bg-white text-white/60 hover:text-black border-white/10'}`}>
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         </div>
 
                         <div className="flex-1 relative flex items-center justify-center p-4 md:p-12 overflow-hidden pointer-events-none">
                             <div className="relative w-full h-full flex items-center justify-center pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                                <img src={galleryItems[viewerIndex].content} className="max-w-full max-h-full object-contain shadow-[0_0_100px_rgba(0,0,0,0.8)] select-none" alt="Viewer" />
+                                <img src={galleryItems[viewerIndex].content} className={`max-w-full max-h-full object-contain select-none ${theme === 'light' ? 'shadow-[0_0_100px_rgba(0,0,0,0.2)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.8)]'}`} alt="Viewer" />
                             </div>
                         </div>
 
                         <div className="p-6 pt-0 pb-12 md:pb-6 shrink-0 z-[110] flex justify-center pointer-events-none">
                             <div className="w-full max-w-[460px] flex items-center gap-2 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                                <button disabled={viewerIndex === 0} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! - 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white transition-all shadow-xl shrink-0 ${viewerIndex === 0 ? 'opacity-0 pointer-events-none' : 'active:scale-95 hover:bg-white hover:text-black'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg></button>
+                                <button disabled={viewerIndex === 0} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! - 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === 0 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg></button>
 
-                                <div className="flex-1 bg-[#1a1a1a]/90 backdrop-blur-3xl h-9 rounded-[18px] px-4 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center justify-between min-0">
+                                <div className={`flex-1 backdrop-blur-3xl h-9 rounded-[18px] px-4 border shadow-[0_20px_50px_rgba(0,0,0,0.2)] flex items-center justify-between min-0 ${theme === 'light' ? 'bg-white/90 border-black/10' : 'bg-[#1a1a1a]/90 border-white/10'}`}>
                                     <div className="flex items-center gap-3 min-0">
-                                        <div className="w-2 h-2 rounded-full bg-white/60 shadow-[0_0_8px_rgba(255,255,255,0.5)] shrink-0" />
-                                        <span className="text-[11px] font-black tracking-[0.1em] text-white/80 uppercase truncate">{galleryItems[viewerIndex].userName}</span>
+                                        <div className={`w-2 h-2 rounded-full shrink-0 ${theme === 'light' ? 'bg-black/60 shadow-[0_0_8px_rgba(0,0,0,0.3)]' : 'bg-white/60 shadow-[0_0_8px_rgba(255,255,255,0.5)]'}`} />
+                                        <span className={`text-[11px] font-black tracking-[0.1em] uppercase truncate ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>{galleryItems[viewerIndex].userName}</span>
                                     </div>
                                     <div className="flex items-center gap-3 shrink-0 ml-2">
-                                        <span className="text-[10px] font-black tracking-[0.1em] text-white/40 tabular-nums whitespace-nowrap">{formatTimeSimple(new Date(galleryItems[viewerIndex].timestamp))}</span>
-                                        <div className="w-px h-4 bg-white/10" />
-                                        <span className="text-[10px] font-black tracking-[0.1em] text-white/20 whitespace-nowrap">{viewerIndex + 1}/{galleryItems.length}</span>
+                                        <span className={`text-[10px] font-black tracking-[0.1em] tabular-nums whitespace-nowrap ${theme === 'light' ? 'text-black/50' : 'text-white/50'}`}>{formatTimeSimple(new Date(galleryItems[viewerIndex].timestamp))}</span>
+                                        <div className={`w-px h-4 ${theme === 'light' ? 'bg-black/10' : 'bg-white/10'}`} />
+                                        <span className={`text-[10px] font-black tracking-[0.1em] whitespace-nowrap ${theme === 'light' ? 'text-black/40' : 'text-white/40'}`}>{viewerIndex + 1}/{galleryItems.length}</span>
                                     </div>
                                 </div>
 
-                                <button disabled={viewerIndex === galleryItems.length - 1} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! + 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white transition-all shadow-xl shrink-0 ${viewerIndex === galleryItems.length - 1 ? 'opacity-0 pointer-events-none' : 'active:scale-95 hover:bg-white hover:text-black'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg></button>
+                                <button disabled={viewerIndex === galleryItems.length - 1} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! + 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === galleryItems.length - 1 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg></button>
                             </div>
                         </div>
                     </div>

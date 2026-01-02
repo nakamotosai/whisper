@@ -36,6 +36,87 @@ export const BUCKET_SIZES = {
     [ScaleLevel.DISTRICT]: 0 // Not used with H3
 };
 
+// --- H3 Hexagon Helpers ---
+
+/**
+ * 获取相邻六边形的H3索引（不含用户自己的）
+ */
+export const getAdjacentH3Cells = (lat: number, lng: number, scale: ScaleLevel): string[] => {
+    if (scale === ScaleLevel.WORLD) return [];
+
+    try {
+        const resolution = scale === ScaleLevel.CITY ? RESOLUTION_CITY : RESOLUTION_DISTRICT;
+        const userH3Index = h3.latLngToCell(lat, lng, resolution);
+        const ring = h3.gridDisk(userH3Index, 1);
+        return ring.filter(cell => cell !== userH3Index);
+    } catch (e) {
+        console.error('getAdjacentH3Cells failed:', e);
+        return [];
+    }
+};
+
+/**
+ * 检查目标六边形是否在用户可参与范围内（自己 + 相邻6个）
+ */
+export const canJoinHex = (userLat: number, userLng: number, targetH3Index: string, scale: ScaleLevel): boolean => {
+    if (scale === ScaleLevel.WORLD) return true;
+
+    try {
+        const resolution = scale === ScaleLevel.CITY ? RESOLUTION_CITY : RESOLUTION_DISTRICT;
+        const userH3Index = h3.latLngToCell(userLat, userLng, resolution);
+        const validCells = h3.gridDisk(userH3Index, 1);
+        return validCells.includes(targetH3Index);
+    } catch (e) {
+        console.error('canJoinHex failed:', e);
+        return false;
+    }
+};
+
+/**
+ * 根据H3索引获取中心坐标
+ */
+export const getH3Center = (h3Index: string): [number, number] => {
+    try {
+        return h3.cellToLatLng(h3Index) as [number, number];
+    } catch (e) {
+        console.error('getH3Center failed:', e);
+        return [0, 0];
+    }
+};
+
+/**
+ * 根据H3索引获取边界坐标
+ */
+export const getH3Boundary = (h3Index: string): [number, number][] => {
+    try {
+        return h3.cellToBoundary(h3Index).map(b => b as [number, number]);
+    } catch (e) {
+        console.error('getH3Boundary failed:', e);
+        return [];
+    }
+};
+
+/**
+ * 获取用户所在的H3索引
+ */
+export const getUserH3Index = (lat: number, lng: number, scale: ScaleLevel): string | null => {
+    if (scale === ScaleLevel.WORLD) return null;
+    try {
+        const resolution = scale === ScaleLevel.CITY ? RESOLUTION_CITY : RESOLUTION_DISTRICT;
+        return h3.latLngToCell(lat, lng, resolution);
+    } catch (e) {
+        console.error('getUserH3Index failed:', e);
+        return null;
+    }
+};
+
+/**
+ * 根据坐标获取H3索引
+ */
+export const getH3IndexFromCoords = (lat: number, lng: number, scale: ScaleLevel): string | null => {
+    return getUserH3Index(lat, lng, scale);
+};
+
 // --- Country & Location Helpers ---
 
 export const getCountryCode = (lat: number, lng: number): string | undefined => {
