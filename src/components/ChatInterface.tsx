@@ -29,12 +29,14 @@ interface ChatInterfaceProps {
     onlineCounts?: Record<ScaleLevel, number>;
     onLoadMore?: (scale: ScaleLevel) => Promise<void>;
     hasMore?: boolean;
+    onDeleteMessage?: (messageId: string) => Promise<void>;
+    onUpdateAnyUserName?: (userId: string, newName: string) => Promise<void>;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     scale, roomId, messages, unreadCounts, user, onSendMessage, onUploadImage, onUploadVoice, onRecallMessage,
     fetchLiveStreams, fetchSharedImages, isOpen, onToggle, onTabChange, onUpdateUser, onOpenSettings, isMobile = false, locationName, theme = 'dark', onlineCounts,
-    onLoadMore, hasMore = false
+    onLoadMore, hasMore = false, onDeleteMessage, onUpdateAnyUserName
 }) => {
     const [inputText, setInputText] = useState('');
     const [isSending, setIsSending] = useState(false);
@@ -44,6 +46,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const [recordingTime, setRecordingTime] = useState(0);
     const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
     const [recallMenuId, setRecallMenuId] = useState<string | null>(null);
+    const [gmMenuId, setGmMenuId] = useState<string | null>(null);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [showNewMessageTip, setShowNewMessageTip] = useState(false);
 
@@ -143,20 +146,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         }
     }, [messages, isOpen, activeSubTab, scale, roomId]);
 
-    // Secondary assurance for opening/re-opening
+    // Secondary assurance for opening/re-opening/resize (keyboard)
     useEffect(() => {
         if (isOpen && activeSubTab === 'CHAT' && messages.length > 0) {
-            setTimeout(() => scrollToBottom('auto'), 50);
+            const timer = setTimeout(() => scrollToBottom('smooth'), 100);
+            return () => clearTimeout(timer);
         }
-    }, [isOpen, activeSubTab]);
+    }, [isOpen, activeSubTab, messages.length]);
+
+    // Handle viewport resize (keyboard show/hide)
+    useEffect(() => {
+        const handleResize = () => {
+            if (activeSubTab === 'CHAT' && isOpen) {
+                scrollToBottom('smooth');
+            }
+        };
+        window.visualViewport?.addEventListener('resize', handleResize);
+        return () => window.visualViewport?.removeEventListener('resize', handleResize);
+    }, [activeSubTab, isOpen]);
 
     useEffect(() => {
-        const handleClickOutside = () => setRecallMenuId(null);
-        if (recallMenuId) {
+        const handleClickOutside = () => {
+            setRecallMenuId(null);
+            setGmMenuId(null);
+        };
+        if (recallMenuId || gmMenuId) {
             document.addEventListener('click', handleClickOutside);
             return () => document.removeEventListener('click', handleClickOutside);
         }
-    }, [recallMenuId]);
+    }, [recallMenuId, gmMenuId]);
 
     const handleScroll = async () => {
         if (!scrollRef.current) return;
@@ -280,6 +298,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
 
     const handleMessageClick = (msg: Message, e: React.MouseEvent) => {
+        if (user.isGM) {
+            e.stopPropagation();
+            setGmMenuId(msg.id);
+            return;
+        }
         if (msg.userId === user.id && !msg.isRecalled) {
             const timeDiff = Date.now() - msg.timestamp;
             if (timeDiff < 30 * 60 * 1000) {
@@ -415,7 +438,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                 <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-700`}>
                                     {isFirstInGroup && (
                                         <div className={`mb-0.5 px-1 text-[10px] font-black uppercase tracking-widest ${isOwn ? (theme === 'light' ? 'text-black/40' : 'text-white/55') : (theme === 'light' ? 'text-black/30' : 'text-white/40')}`}>
-                                            {msg.userName || `NODE_${msg.userId.substring(0, 4)}`}
+                                            <span className={msg.isGM ? 'text-rainbow-scroll scale-110 origin-left inline-block' : ''}>
+                                                {msg.userName || `NODE_${msg.userId.substring(0, 4)}`}
+                                            </span>
                                             {msg.countryCode && (
                                                 <span className="ml-1 opacity-50 font-normal"> - {getCountryNameCN(msg.countryCode)}</span>
                                             )}
@@ -492,6 +517,48 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                 </button>
                                             </div>
                                         )}
+
+                                        {gmMenuId === msg.id && user.isGM && (
+                                            <div className={`absolute -top-10 ${isOwn ? 'right-0' : 'left-0'} z-50 flex gap-2 animate-in zoom-in-95 fade-in duration-200`}>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const newName = prompt('输入该用户的新代号:', msg.userName);
+                                                        if (newName && onUpdateAnyUserName) {
+                                                            onUpdateAnyUserName(msg.userId, newName);
+                                                        }
+                                                        setGmMenuId(null);
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-amber-500/90 text-white' : 'bg-amber-600/90 text-white'}`}
+                                                >
+                                                    改名
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm('确定要永久抹除这条记录吗？') && onDeleteMessage) {
+                                                            onDeleteMessage(msg.id);
+                                                        }
+                                                        setGmMenuId(null);
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-red-500/90 text-white' : 'bg-red-600/90 text-white'}`}
+                                                >
+                                                    抹除
+                                                </button>
+                                                {!isOwn && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onRecallMessage(msg.id);
+                                                            setGmMenuId(null);
+                                                        }}
+                                                        className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                                                    >
+                                                        撤回
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
 
                                     {isLastInGroup && (
@@ -533,7 +600,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
             {
                 activeSubTab === 'CHAT' && (
-                    <div className={`shrink-0 z-20 ${isMobile ? 'p-4 pt-1' : 'p-6 pt-1'}`}>
+                    <div className={`shrink-0 z-20 ${isMobile ? 'px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))]' : 'p-6 pt-1'}`}>
                         <div className={`backdrop-blur-md h-9 rounded-[18px] p-1 border shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center ${theme === 'light' ? 'bg-white/60 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10'}`}>
                             <button type="button" onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')} className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${inputMode === 'voice' ? 'bg-white text-black shadow-lg scale-105' : (theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black/60 hover:bg-black/10' : 'bg-white/5 text-white/50 hover:text-white/70 hover:bg-white/10')}`}>
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -29,6 +29,13 @@ export default function Home() {
   const [showUnifiedSettings, setShowUnifiedSettings] = useState(false);
   const [tempName, setTempName] = useState('');
 
+  // GM Account State
+  const [gmClickCount, setGmClickCount] = useState(0);
+  const [gmClickTimer, setGmClickTimer] = useState<NodeJS.Timeout | null>(null);
+  const [showGmPrompt, setShowGmPrompt] = useState(false);
+  const [gmPassword, setGmPassword] = useState('');
+  const [isGmLoggingIn, setIsGmLoggingIn] = useState(false);
+
   const [location, setLocation] = useState<LocationState>(CHINA_DEFAULT);
 
   const [activeScale, setActiveScale] = useState<ScaleLevel>(ScaleLevel.WORLD);
@@ -175,17 +182,20 @@ export default function Home() {
       checkMobile();
       // Use visualViewport for accurate mobile viewport (handles keyboard)
       if (window.visualViewport) {
+        // On iOS, visualViewport.height is the visible height excluding keyboard
         setViewportHeight(`${window.visualViewport.height}px`);
-        // If the keyboard is forcing a scroll, reset it
-        if (window.scrollY > 0) {
-          window.scrollTo(0, 0);
+
+        // Handle the offset created by the keyboard
+        if (window.visualViewport.offsetTop > 0) {
+          window.scrollTo(0, window.visualViewport.offsetTop);
         }
       } else {
         setViewportHeight(`${window.innerHeight}px`);
       }
     };
     window.addEventListener('resize', handleResize);
-    window.addEventListener('scroll', () => { if (window.scrollY > 0) window.scrollTo(0, 0); }); // Aggressive scroll lock
+    // REMOVED: Aggressive scroll lock can fight with mobile keyboard scrolling
+    // window.addEventListener('scroll', () => { if (window.scrollY > 0) window.scrollTo(0, 0); }); 
     // Listen to both resize and scroll on visualViewport for iOS keyboard
     window.visualViewport?.addEventListener('resize', handleResize);
     window.visualViewport?.addEventListener('scroll', handleResize);
@@ -301,7 +311,7 @@ export default function Home() {
     if (!userGps) return;
     const h3Index = roomId.split('_')[1];
     if (!h3Index) return;
-    if (!canJoinHex(userGps[0], userGps[1], h3Index, activeScale)) {
+    if (!canJoinHex(userGps[0], userGps[1], h3Index, activeScale, currentUser.isGM)) {
       console.warn('Cannot join hex outside range');
       return;
     }
@@ -310,7 +320,101 @@ export default function Home() {
     getLocationName(lat, lng, activeScale).then(setLocationName);
     setAllMessages(prev => ({ ...prev, [activeScale]: [] }));
     setHasMore(prev => ({ ...prev, [activeScale]: true }));
-  }, [userGps, activeScale]);
+  }, [userGps, activeScale, currentUser.isGM]); // Added isGM to dependencies
+
+  // GM Activation Logic
+  const handleLogoClick = useCallback(() => {
+    if (currentUser.isGM) return;
+
+    setGmClickCount(prev => {
+      const newCount = prev + 1;
+      if (newCount >= 5) {
+        setShowGmPrompt(true);
+        return 0;
+      }
+      return newCount;
+    });
+
+    if (gmClickTimer) clearTimeout(gmClickTimer);
+    const timer = setTimeout(() => {
+      setGmClickCount(0);
+    }, 2000); // Reset count after 2s of inactivity
+    setGmClickTimer(timer);
+  }, [currentUser.isGM, gmClickTimer]);
+
+  const handleGmLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (gmPassword !== '123' || !supabase) {
+      alert('密码错误或系统未就绪');
+      setGmPassword('');
+      return;
+    }
+
+    setIsGmLoggingIn(true);
+    try {
+      // Single GM Session Check: Check site_settings for active GM
+      const { data: settings } = await supabase.from('site_settings').select('value_text').eq('key', 'gm_active_user_id').single();
+
+      if (settings?.value_text && settings.value_text !== currentUser.id) {
+        // Check if the user is actually online (Presence might be complex, let's assume if it's set, someone is GM)
+        // For simplicity, we allow override if it's been more than 5 minutes since update (last active)
+        // But here we'll just show the requirement "Only one GM allowed"
+        const { data: presenceState } = await supabase.channel('world_global').presenceState();
+        const isAnotherGmOnline = Object.values(presenceState).flat().some((p: any) => p.isGM && p.user_id !== currentUser.id);
+
+        if (isAnotherGmOnline) {
+          alert('当前已有另一位特工老蔡在线，请稍后再试。');
+          setShowGmPrompt(false);
+          setGmPassword('');
+          return;
+        }
+      }
+
+      // Set GM Status
+      const gmUser: User = {
+        ...currentUser,
+        name: '老蔡',
+        isGM: true
+      };
+
+      setCurrentUser(gmUser);
+      localStorage.setItem('whisper_user_name', '老蔡');
+
+      // Update site_settings
+      await supabase.from('site_settings').upsert({ key: 'gm_active_user_id', value_text: currentUser.id, updated_at: new Date().toISOString() });
+
+      setShowGmPrompt(false);
+      setGmPassword('');
+      alert('超级权限已激活，指挥官。');
+    } catch (err) {
+      console.error('GM Login Error:', err);
+    } finally {
+      setIsGmLoggingIn(false);
+    }
+  };
+
+  const handleUpdateAnyUserName = async (userId: string, newName: string) => {
+    if (!currentUser.isGM || !supabase) return;
+    try {
+      const { error } = await supabase.from('messages').update({ user_name: newName }).eq('user_id', userId);
+      if (error) throw error;
+      alert(`已将用户 ID 为 ${userId} 的名字改为 ${newName}`);
+    } catch (err) {
+      alert('更改失败');
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!currentUser.isGM || !supabase) return;
+    try {
+      const { error } = await supabase.from('messages').delete().eq('id', messageId);
+      if (error) throw error;
+      // Also broadcast deletion or let it sync via channel if we add deletion listener
+      alert('记录已彻底抹除');
+    } catch (err) {
+      alert('删除失败');
+    }
+  };
 
   const onLoadMore = useCallback(async (scale: ScaleLevel) => {
     const rid = roomIds[scale];
@@ -428,6 +532,7 @@ export default function Home() {
             user_id: currentUser.id,
             user_name: currentUser.name,
             avatarSeed: currentUser.avatarSeed,
+            isGM: currentUser.isGM,
             lat: userGps ? userGps[0] : location.lat,
             lng: userGps ? userGps[1] : location.lng,
             onlineAt: Date.now()
@@ -445,6 +550,13 @@ export default function Home() {
   const handleSettingsSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const finalName = tempName.trim() || RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
+
+    // Reserve "老蔡" for GM
+    if (finalName === '老蔡' && !currentUser.isGM) {
+      alert('此代号受保护，请选择其他代号。');
+      return;
+    }
+
     setCurrentUser(prev => ({ ...prev, name: finalName }));
     localStorage.setItem('whisper_user_name', finalName);
     localStorage.setItem('whisper_theme', theme);
@@ -482,10 +594,31 @@ export default function Home() {
   const onSendMessage = async (content: string) => {
     const rid = roomIds[activeScale];
     if (!supabase || !rid) return;
-    const msg = { id: Math.random().toString(36).substring(2, 11), userId: currentUser.id, userName: currentUser.name, userAvatarSeed: currentUser.avatarSeed, content, timestamp: Date.now(), type: 'text' as const, countryCode: currentUser.countryCode };
+    const msg = {
+      id: Math.random().toString(36).substring(2, 11),
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userAvatarSeed: currentUser.avatarSeed,
+      content,
+      timestamp: Date.now(),
+      type: 'text' as const,
+      countryCode: currentUser.countryCode,
+      isGM: currentUser.isGM
+    };
     setAllMessages(prev => ({ ...prev, [activeScale]: [...prev[activeScale], msg] }));
     try {
-      const { error } = await supabase.from('messages').insert({ id: msg.id, room_id: rid, user_id: currentUser.id, user_name: currentUser.name, user_avatar_seed: currentUser.avatarSeed, content, timestamp: new Date(msg.timestamp).toISOString(), type: 'text' });
+      const { error } = await supabase.from('messages').insert({
+        id: msg.id,
+        room_id: rid,
+        user_id: currentUser.id,
+        user_name: currentUser.name,
+        user_avatar_seed: currentUser.avatarSeed,
+        content,
+        timestamp: new Date(msg.timestamp).toISOString(),
+        type: 'text',
+        is_gm: currentUser.isGM,
+        country_code: currentUser.countryCode
+      });
       if (error) throw error;
       if (channelsRef.current[rid]) await channelsRef.current[rid].send({ type: 'broadcast', event: 'chat-message', payload: msg });
     } catch (err) { }
@@ -512,9 +645,23 @@ export default function Home() {
     try {
       const result = await uploadImage(file);
       if (!result.success || !result.url) throw new Error(result.error);
-      const finalMsg = { ...tempMsg, content: result.url };
-      setAllMessages(prev => ({ ...prev, [activeScale]: prev[activeScale].map(m => m.id === tempId ? finalMsg : m) }));
-      const { error: dbError } = await supabase.from('messages').insert({ id: tempId, room_id: rid, user_id: currentUser.id, user_name: currentUser.name, user_avatar_seed: currentUser.avatarSeed, content: result.url, timestamp: new Date(finalMsg.timestamp).toISOString(), type: 'image' });
+      const finalMsg = { ...tempMsg, content: result.url, isGM: currentUser.isGM };
+      setAllMessages(prev => ({
+        ...prev,
+        [activeScale]: prev[activeScale].map(m => m.id === tempId ? finalMsg : m)
+      }));
+      const { error: dbError } = await supabase.from('messages').insert({
+        id: tempId,
+        room_id: rid,
+        user_id: currentUser.id,
+        user_name: currentUser.name,
+        user_avatar_seed: currentUser.avatarSeed,
+        content: result.url,
+        timestamp: new Date(finalMsg.timestamp).toISOString(),
+        type: 'image',
+        is_gm: currentUser.isGM,
+        country_code: currentUser.countryCode
+      });
       if (dbError) throw dbError;
       if (channelsRef.current[rid]) await channelsRef.current[rid].send({ type: 'broadcast', event: 'chat-message', payload: finalMsg });
     } catch (err) { setAllMessages(prev => ({ ...prev, [activeScale]: prev[activeScale].filter(m => m.id !== tempId) })); }
@@ -526,9 +673,30 @@ export default function Home() {
     try {
       const result = await uploadVoice(blob);
       if (!result.success || !result.url) throw new Error(result.error);
-      const msg = { id: Math.random().toString(36).substring(2, 11), userId: currentUser.id, userName: currentUser.name, userAvatarSeed: currentUser.avatarSeed, content: result.url, timestamp: Date.now(), type: 'voice' as const, countryCode: currentUser.countryCode };
+      const msg = {
+        id: Math.random().toString(36).substring(2, 11),
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userAvatarSeed: currentUser.avatarSeed,
+        content: result.url,
+        timestamp: Date.now(),
+        type: 'voice' as const,
+        countryCode: currentUser.countryCode,
+        isGM: currentUser.isGM
+      };
       setAllMessages(prev => ({ ...prev, [activeScale]: [...prev[activeScale], msg] }));
-      const { error: dbError } = await supabase.from('messages').insert({ id: msg.id, room_id: rid, user_id: currentUser.id, user_name: currentUser.name, user_avatar_seed: currentUser.avatarSeed, content: result.url, timestamp: new Date(msg.timestamp).toISOString(), type: 'voice' });
+      const { error: dbError } = await supabase.from('messages').insert({
+        id: msg.id,
+        room_id: rid,
+        user_id: currentUser.id,
+        user_name: currentUser.name,
+        user_avatar_seed: currentUser.avatarSeed,
+        content: result.url,
+        timestamp: new Date(msg.timestamp).toISOString(),
+        type: 'voice',
+        is_gm: currentUser.isGM,
+        country_code: currentUser.countryCode
+      });
       if (dbError) throw dbError;
       if (channelsRef.current[rid]) await channelsRef.current[rid].send({ type: 'broadcast', event: 'chat-message', payload: msg });
     } catch (err) { }
@@ -555,7 +723,7 @@ export default function Home() {
   );
 
   return (
-    <div className="flex w-screen bg-black overflow-hidden select-none relative flex-col touch-none" style={{ height: viewportHeight }}>
+    <div className="flex w-screen bg-black overflow-hidden select-none relative flex-col" style={{ height: viewportHeight }}>
       {isLocatingOverlay}
       {showUnifiedSettings && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 backdrop-blur-md bg-black/40">
@@ -636,6 +804,33 @@ export default function Home() {
           </div>
         </div>
       )}
+      {showGmPrompt && (
+        <div className="fixed inset-0 z-[30000] flex items-center justify-center p-6 backdrop-blur-3xl bg-black/80">
+          <div className="w-full max-w-xs crystal-black-outer p-6 rounded-[32px] container-rainbow-main flex flex-col gap-6 animate-in zoom-in-95 duration-500 relative">
+            <div className="flex flex-col gap-2 items-center">
+              <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center border border-white/10 mb-2">
+                <svg className="w-6 h-6 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              </div>
+              <h3 className="text-white text-sm font-black uppercase tracking-[0.3em]">身份验证</h3>
+              <p className="text-white/40 text-[10px] uppercase font-bold tracking-widest text-center">输入秘密协议码以激活超级权限</p>
+            </div>
+            <form onSubmit={handleGmLogin} className="flex flex-col gap-4">
+              <input
+                type="password"
+                placeholder="密码"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/20 text-center tracking-[0.5em]"
+                value={gmPassword}
+                onChange={(e) => setGmPassword(e.target.value)}
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setShowGmPrompt(false); setGmPassword(''); }} className="flex-1 py-3 bg-white/5 text-white/40 font-black uppercase tracking-widest rounded-xl text-[10px] border border-white/5">关闭</button>
+                <button type="submit" disabled={isGmLoggingIn} className="flex-1 py-3 bg-white text-black font-black uppercase tracking-widest rounded-xl text-[10px] shadow-xl active:scale-95 transition-all">{isGmLoggingIn ? '验证中...' : '提交'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       <div className="absolute inset-0 z-0">
         <MapWithNoSSR
           initialPosition={[location.lat, location.lng]}
@@ -665,7 +860,10 @@ export default function Home() {
       {/* Desktop Logo Overlay */}
       {!isMobile && (
         <div className="fixed top-8 left-6 z-[5000] flex items-center gap-4 pointer-events-none group animate-in fade-in slide-in-from-top-4 duration-1000">
-          <div className="w-12 h-12 crystal-nav-vertical flex items-center justify-center p-2.5 shadow-2xl relative overflow-hidden pointer-events-auto">
+          <div
+            onClick={handleLogoClick}
+            className="w-12 h-12 crystal-nav-vertical flex items-center justify-center p-2.5 shadow-2xl relative overflow-hidden pointer-events-auto active:scale-90 transition-transform cursor-pointer"
+          >
             <img
               src="/logo.png"
               className="w-full h-full object-contain relative z-20 group-hover:scale-110 transition-transform duration-500"
@@ -713,7 +911,10 @@ export default function Home() {
       {isMobile && !isChatOpen && (
         <div className="fixed inset-x-4 bottom-10 z-[5000] flex flex-col items-center gap-4 animate-in fade-in slide-in-from-bottom-5 duration-700">
           {/* Mobile Floating Text Logo */}
-          <div className="flex flex-col items-center gap-0 pointer-events-none mb-2 drop-shadow-2xl">
+          <div
+            onClick={handleLogoClick}
+            className="flex flex-col items-center gap-0 pointer-events-auto mb-2 drop-shadow-2xl active:scale-95 transition-transform"
+          >
             <img
               src="/utopia.png"
               className={`h-8 w-auto object-contain transition-all duration-500 ${theme === 'dark' ? 'invert opacity-60' : 'opacity-60'}`}
@@ -739,7 +940,14 @@ export default function Home() {
         </div>
       )}
       <div
-        className={`fixed transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)] z-[1000] overflow-hidden ${isMobile ? 'rounded-[32px]' : 'rounded-[40px]'} ${(!isMobile || isChatOpen) ? (isMobile ? 'absolute top-[4vw] left-[4vw] right-[4vw] bottom-[max(4vw,env(safe-area-inset-bottom))]' : 'top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100') : (isMobile ? 'absolute translate-y-[120%] opacity-0' : 'top-6 right-6 bottom-6 w-[360px] translate-x-[120%] opacity-0')}`}
+        className={`z-[1000] overflow-hidden ${isMobile ? 'absolute transition-all duration-300 ease-out' : 'fixed top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100 transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)]'} ${(!isMobile || isChatOpen) ? 'translate-y-0 opacity-100' : (isMobile ? 'translate-y-[120%] opacity-0' : 'translate-x-[120%] opacity-0')}`}
+        style={isMobile ? {
+          top: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw',
+          left: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw',
+          right: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw',
+          height: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? viewportHeight : `calc(${viewportHeight} - 8vw)`,
+          borderRadius: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '32px'
+        } : {}}
         onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
         onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
       >
@@ -770,6 +978,8 @@ export default function Home() {
           }}
           onLoadMore={onLoadMore}
           hasMore={hasMore[activeScale]}
+          onDeleteMessage={handleDeleteMessage}
+          onUpdateAnyUserName={handleUpdateAnyUserName}
         />
         <PWAInstaller theme={theme} />
       </div>

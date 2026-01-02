@@ -58,8 +58,8 @@ export const getAdjacentH3Cells = (lat: number, lng: number, scale: ScaleLevel):
 /**
  * 检查目标六边形是否在用户可参与范围内（自己 + 相邻6个）
  */
-export const canJoinHex = (userLat: number, userLng: number, targetH3Index: string, scale: ScaleLevel): boolean => {
-    if (scale === ScaleLevel.WORLD) return true;
+export const canJoinHex = (userLat: number, userLng: number, targetH3Index: string, scale: ScaleLevel, isGM?: boolean): boolean => {
+    if (scale === ScaleLevel.WORLD || isGM) return true;
 
     try {
         const resolution = scale === ScaleLevel.CITY ? RESOLUTION_CITY : RESOLUTION_DISTRICT;

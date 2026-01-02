@@ -12,6 +12,7 @@ export interface User {
     avatarSeed: string;
     name: string;
     countryCode?: string;
+    isGM?: boolean;
 }
 
 export interface Message {
@@ -24,6 +25,7 @@ export interface Message {
     type: 'text' | 'emoji' | 'voice' | 'image';
     countryCode?: string;
     isRecalled?: boolean;
+    isGM?: boolean;
 }
 
 export interface RoomStats {
@@ -80,4 +82,5 @@ export interface UserPresence {
     lat: number;
     lng: number;
     onlineAt: number;
+    isGM?: boolean;
 }
