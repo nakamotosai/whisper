@@ -97,6 +97,26 @@ export default function Home() {
 
   useEffect(() => { activeScaleRef.current = activeScale; }, [activeScale]);
 
+  // Handle PWA App Badge (Notification counts on desktop icon)
+  useEffect(() => {
+    const updateBadge = async () => {
+      if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
+        try {
+          // Calculate total unread count across all channels
+          const totalUnread = unreadCounts[ScaleLevel.WORLD] + unreadCounts[ScaleLevel.CITY] + unreadCounts[ScaleLevel.DISTRICT];
+          if (totalUnread > 0) {
+            await navigator.setAppBadge(totalUnread);
+          } else {
+            await navigator.clearAppBadge();
+          }
+        } catch (error) {
+          console.warn('App Badge API error:', error);
+        }
+      }
+    };
+    updateBadge();
+  }, [unreadCounts]);
+
   const getSmartInitialLocation = useCallback(() => {
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -443,7 +463,8 @@ export default function Home() {
     if (data && data.length > 0) {
       const fetched = data.map((m: any) => ({
         id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
-        content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true'
+        content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
+        isGM: m.is_gm, replyTo: m.reply_to
       })).reverse();
 
       setAllMessages(prev => ({
@@ -496,7 +517,7 @@ export default function Home() {
         const fetched = data.map((m: any) => ({
           id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
           content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
-          isGM: m.is_gm
+          isGM: m.is_gm, replyTo: m.reply_to
         })).reverse();
 
         setAllMessages(prev => {
@@ -556,7 +577,7 @@ export default function Home() {
         const fetched = data.map((m: any) => ({
           id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
           content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
-          isGM: m.is_gm
+          isGM: m.is_gm, replyTo: m.reply_to
         })).reverse();
         setAllMessages(prev => ({ ...prev, [scale]: fetched }));
         setHasMore(prev => ({ ...prev, [scale]: data.length >= 30 }));
@@ -606,7 +627,7 @@ export default function Home() {
         const fetched = data.map((m: any) => ({
           id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
           content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
-          isGM: m.is_gm
+          isGM: m.is_gm, replyTo: m.reply_to
         })).reverse();
         setAllMessages(prev => ({ ...prev, [scale]: fetched }));
         setHasMore(prev => ({ ...prev, [scale]: data.length >= 30 }));
@@ -689,7 +710,7 @@ export default function Home() {
     } finally { setIsSubmittingSuggestion(false); }
   };
 
-  const onSendMessage = async (content: string) => {
+  const onSendMessage = async (content: string, replyTo?: Message['replyTo']) => {
     const rid = roomIds[activeScale];
     if (!supabase || !rid) return;
     const msg = {
@@ -701,7 +722,8 @@ export default function Home() {
       timestamp: Date.now(),
       type: 'text' as const,
       countryCode: currentUser.countryCode,
-      isGM: currentUser.isGM
+      isGM: currentUser.isGM,
+      replyTo
     };
     setAllMessages(prev => ({ ...prev, [activeScale]: [...prev[activeScale], msg] }));
     try {
@@ -715,7 +737,8 @@ export default function Home() {
         timestamp: new Date(msg.timestamp).toISOString(),
         type: 'text',
         is_gm: currentUser.isGM,
-        country_code: currentUser.countryCode
+        country_code: currentUser.countryCode,
+        reply_to: replyTo
       });
       if (error) {
         console.error('Insert failed:', error);
@@ -744,17 +767,17 @@ export default function Home() {
     } catch (err) { }
   };
 
-  const onUploadImage = async (file: File) => {
+  const onUploadImage = async (file: File, replyTo?: Message['replyTo']) => {
     const rid = roomIds[activeScale];
     if (!supabase || !rid) return;
     const tempId = Math.random().toString(36).substring(2, 11);
     const localUrl = URL.createObjectURL(file);
-    const tempMsg = { id: tempId, userId: currentUser.id, userName: currentUser.name, userAvatarSeed: currentUser.avatarSeed, content: localUrl, timestamp: Date.now(), type: 'image' as const, countryCode: currentUser.countryCode };
+    const tempMsg = { id: tempId, userId: currentUser.id, userName: currentUser.name, userAvatarSeed: currentUser.avatarSeed, content: localUrl, timestamp: Date.now(), type: 'image' as const, countryCode: currentUser.countryCode, replyTo };
     setAllMessages(prev => ({ ...prev, [activeScale]: [...prev[activeScale], tempMsg] }));
     try {
       const result = await uploadImage(file);
       if (!result.success || !result.url) throw new Error(result.error);
-      const finalMsg = { ...tempMsg, content: result.url, isGM: currentUser.isGM };
+      const finalMsg = { ...tempMsg, content: result.url, isGM: currentUser.isGM, replyTo };
       setAllMessages(prev => ({
         ...prev,
         [activeScale]: prev[activeScale].map(m => m.id === tempId ? finalMsg : m)
@@ -769,7 +792,8 @@ export default function Home() {
         timestamp: new Date(finalMsg.timestamp).toISOString(),
         type: 'image',
         is_gm: currentUser.isGM,
-        country_code: currentUser.countryCode
+        country_code: currentUser.countryCode,
+        reply_to: replyTo
       });
       if (dbError) {
         console.error('Insert image failed:', dbError);
@@ -785,7 +809,7 @@ export default function Home() {
     }
   };
 
-  const onUploadVoice = async (blob: Blob, duration: number) => {
+  const onUploadVoice = async (blob: Blob, duration: number, replyTo?: Message['replyTo']) => {
     const rid = roomIds[activeScale];
     if (!supabase || !rid) return;
     try {
@@ -800,7 +824,8 @@ export default function Home() {
         timestamp: Date.now(),
         type: 'voice' as const,
         countryCode: currentUser.countryCode,
-        isGM: currentUser.isGM
+        isGM: currentUser.isGM,
+        replyTo
       };
       setAllMessages(prev => ({ ...prev, [activeScale]: [...prev[activeScale], msg] }));
       const { error: dbError } = await supabase.from('messages').insert({
@@ -813,7 +838,8 @@ export default function Home() {
         timestamp: new Date(msg.timestamp).toISOString(),
         type: 'voice',
         is_gm: currentUser.isGM,
-        country_code: currentUser.countryCode
+        country_code: currentUser.countryCode,
+        reply_to: replyTo
       });
       if (dbError) {
         console.error('Insert voice failed:', dbError);

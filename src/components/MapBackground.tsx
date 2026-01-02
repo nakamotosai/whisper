@@ -444,15 +444,19 @@ export const MapBackground = memo(({
     if (!domReady) return <div className="absolute inset-0 bg-black" />;
 
     const selfIcon = (color: string) => L.divIcon({
-        className: 'self-marker',
+        className: 'self-marker-wrapper',
         html: `
-            <div style="position:relative;width:50px;height:50px;display:flex;align-items:center;justify-content:center;">
-                <div style="position:absolute;width:100%;height:100%;border-radius:50%;background:white;opacity:0.1;"></div>
-                <div style="width:14px;height:14px;background:white;border-radius:50%;box-shadow:0 0 20px white, 0 0 8px ${color};border:2px solid ${color};z-index:10;"></div>
+            <div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;">
+                <!-- Precision Outer Ring -->
+                <div style="position:absolute;width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,0.25);background:rgba(255,255,255,0.08);"></div>
+                <!-- Scale Color Accent -->
+                <div style="position:absolute;width:16px;height:16px;border-radius:50%;border:2px solid ${color};box-shadow:0 0 15px ${color};"></div>
+                <!-- Core Signal -->
+                <div style="width:6px;height:6px;background:white;border-radius:50%;box-shadow:0 0 12px white;z-index:10;"></div>
             </div>
         `,
-        iconSize: [50, 50],
-        iconAnchor: [25, 25]
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
     });
 
     const isDark = theme === 'dark';
@@ -462,7 +466,6 @@ export const MapBackground = memo(({
     return (
         <div className={`absolute inset-0 overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-100'}`}>
             <style>{`
-                @keyframes self-wave { 0% {transform:scale(0.3);opacity:0.6;} 100% {transform:scale(1.4);opacity:0;} }
                 .leaflet-container { background: ${isDark ? '#090909' : '#f3f4f6'} !important; outline: none !important; }
                 
                 /* Optimized tile loading - removed heavy filters */

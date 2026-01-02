@@ -93,18 +93,35 @@ export const PWAInstaller: React.FC<PWAInstallerProps> = ({ theme = 'dark' }) =>
 
                 {isIOS ? (
                     <div className={`flex flex-col gap-3 p-3.5 rounded-2xl ${theme === 'light' ? 'bg-black/5' : 'bg-white/5'}`}>
-                        <div className="flex items-center gap-3 text-[12px] font-bold">
-                            <span className="w-6 h-6 rounded-lg bg-blue-500 flex items-center justify-center text-[10px] text-white">1</span>
-                            <span>点击浏览器底部的“分享”按钮</span>
-                            <div className="p-1 px-2 rounded-lg bg-white/10 text-blue-400">
-                                <svg className="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                        <div className="flex items-center gap-3 text-[11px] font-bold">
+                            <span className="w-5 h-5 shrink-0 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[10px]">1</span>
+                            <span>请确保是在 <span className="text-blue-500">Safari 浏览器</span> 中打开本站</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] font-bold">
+                            <span className="w-5 h-5 shrink-0 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[10px]">2</span>
+                            <div className="flex items-center gap-1.5 flex-1">
+                                <span>点击底部工具栏的</span>
+                                <div className="p-1 rounded-md bg-white/20 flex items-center justify-center">
+                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                        <path d="M4 12V20C4 20.5523 4.44772 21 5 21H19C19.5523 21 20 20.5523 20 20V12" />
+                                        <path d="M12 15V3M12 3L8 7M12 3L16 7" />
+                                    </svg>
+                                </div>
+                                <span>“分享”按钮</span>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3 text-[12px] font-bold">
-                            <span className="w-6 h-6 rounded-lg bg-blue-500 flex items-center justify-center text-[10px] text-white">2</span>
-                            <span>在菜单中找到并选择“添加到主屏幕”</span>
-                            <div className="p-1 px-2 rounded-lg bg-white/10">
-                                <svg className="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <div className="flex items-center gap-3 text-[11px] font-bold">
+                            <span className="w-5 h-5 shrink-0 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[10px]">3</span>
+                            <div className="flex items-center gap-1.5 flex-1">
+                                <span>选择菜单中的</span>
+                                <div className="p-1 rounded-md bg-white/20 flex items-center justify-center">
+                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                                        <line x1="12" y1="8" x2="12" y2="16" />
+                                        <line x1="8" y1="12" x2="16" y2="12" />
+                                    </svg>
+                                </div>
+                                <span>“添加到主屏幕”</span>
                             </div>
                         </div>
                     </div>

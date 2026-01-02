@@ -26,6 +26,10 @@ export interface Message {
     countryCode?: string;
     isRecalled?: boolean;
     isGM?: boolean;
+    replyTo?: {
+        userName: string;
+        content: string;
+    };
 }
 
 export interface RoomStats {

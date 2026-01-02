@@ -12,9 +12,9 @@ interface ChatInterfaceProps {
     messages: Message[];
     unreadCounts: Record<ScaleLevel, number>;
     user: User;
-    onSendMessage: (content: string) => Promise<void>;
-    onUploadImage: (file: File) => Promise<void>;
-    onUploadVoice: (blob: Blob, duration: number) => Promise<void>;
+    onSendMessage: (content: string, replyTo?: Message['replyTo']) => Promise<void>;
+    onUploadImage: (file: File, replyTo?: Message['replyTo']) => Promise<void>;
+    onUploadVoice: (blob: Blob, duration: number, replyTo?: Message['replyTo']) => Promise<void>;
     onRecallMessage: (messageId: string) => Promise<void>;
     fetchLiveStreams: (roomId: string) => Promise<LiveStream[]>;
     fetchSharedImages: (roomId: string) => Promise<SharedImage[]>;
@@ -48,8 +48,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
     const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
-    const [recallMenuId, setRecallMenuId] = useState<string | null>(null);
-    const [gmMenuId, setGmMenuId] = useState<string | null>(null);
+    const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+    const [quotedMessage, setQuotedMessage] = useState<Message['replyTo'] | null>(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [showNewMessageTip, setShowNewMessageTip] = useState(false);
@@ -88,18 +88,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
         if (scrollRef.current) {
             const container = scrollRef.current;
-            // Scroll to the absolute end
             container.scrollTo({ top: container.scrollHeight + 1000, behavior });
             setShowNewMessageTip(false);
 
-            // Double check after a frame to catch any delayed layout shifts
             requestAnimationFrame(() => {
                 if (container) container.scrollTo({ top: container.scrollHeight + 1000, behavior });
             });
         }
     };
 
-    // Handle all scrolling side effects
     useEffect(() => {
         if (activeSubTab === 'CHAT' && scrollRef.current && isOpen) {
             const container = scrollRef.current;
@@ -108,7 +105,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             const currentLastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
             const currentLastId = currentLastMsg?.id || null;
 
-            // 1. Detect Room/Tab Change
             const roomChanged = roomId !== lastRoomId.current;
             const subTabChangedToChat = activeSubTab === 'CHAT' && lastSubTab.current !== 'CHAT';
 
@@ -116,14 +112,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 lastMessageId.current = null;
                 lastRoomId.current = roomId;
                 lastSubTab.current = activeSubTab;
-                // Force scroll to bottom on entry/return
                 requestAnimationFrame(() => {
                     scrollToBottom('auto');
                 });
-                return; // Early return to let this frame complete
+                return;
             }
 
-            // 2. Detect New Messages
             const isInitialLoad = lastMessageId.current === null && currentLastId !== null;
             const hasNewerMessage = currentLastId !== null && currentLastId !== lastMessageId.current;
 
@@ -141,7 +135,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 }
             }
 
-            // 3. Handle History Loading Pagination
             if (lastScrollHeight.current > 0) {
                 const heightDiff = container.scrollHeight - lastScrollHeight.current;
                 if (heightDiff > 0) {
@@ -157,7 +150,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         }
     }, [messages, isOpen, activeSubTab, scale, roomId]);
 
-    // Secondary assurance for opening/re-opening/resize (keyboard)
     useEffect(() => {
         if (isOpen && activeSubTab === 'CHAT' && messages.length > 0) {
             const timer = setTimeout(() => scrollToBottom('smooth'), 100);
@@ -165,13 +157,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         }
     }, [isOpen, activeSubTab, messages.length]);
 
-    // Handle viewport resize (keyboard show/hide)
     useEffect(() => {
         const handleResize = () => {
             if (activeSubTab === 'CHAT' && isOpen) {
-                // Use 'auto' for immediate snap when keyboard opens
                 scrollToBottom('auto');
-                // Second call with 'smooth' and delay to catch the tail end of animations
                 setTimeout(() => scrollToBottom('smooth'), 100);
                 setTimeout(() => scrollToBottom('smooth'), 300);
             }
@@ -180,43 +169,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return () => window.visualViewport?.removeEventListener('resize', handleResize);
     }, [activeSubTab, isOpen]);
 
-    // Watch for chat container height changes (e.g. keyboard showing)
     useEffect(() => {
         if (!scrollRef.current || activeSubTab !== 'CHAT') return;
-
         const observer = new ResizeObserver(() => {
             if (isOpen) {
                 scrollToBottom('auto');
-                // Smooth follow-up
                 setTimeout(() => scrollToBottom('smooth'), 100);
             }
         });
-
         observer.observe(scrollRef.current);
         return () => observer.disconnect();
     }, [activeSubTab, isOpen]);
 
     useEffect(() => {
         const handleClickOutside = () => {
-            setRecallMenuId(null);
-            setGmMenuId(null);
+            setActiveMenuId(null);
             setShowEmojiPicker(false);
         };
-        if (recallMenuId || gmMenuId || showEmojiPicker) {
+        if (activeMenuId || showEmojiPicker) {
             document.addEventListener('click', handleClickOutside);
             return () => document.removeEventListener('click', handleClickOutside);
         }
-    }, [recallMenuId, gmMenuId, showEmojiPicker]);
+    }, [activeMenuId, showEmojiPicker]);
 
     const handleScroll = async () => {
         if (!scrollRef.current) return;
-
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-
         if (scrollHeight - scrollTop - clientHeight < 50) {
             setShowNewMessageTip(false);
         }
-
         if (scrollTop < 50 && hasMore && !isLoadingMore && activeSubTab === 'CHAT') {
             setIsLoadingMore(true);
             lastScrollHeight.current = scrollHeight;
@@ -244,7 +225,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
                 if (duration >= 1) {
                     setIsSending(true);
-                    await onUploadVoice(audioBlob, duration);
+                    const reply = quotedMessage;
+                    setQuotedMessage(null);
+                    await onUploadVoice(audioBlob, duration, reply || undefined);
                     setIsSending(false);
                 }
                 stream.getTracks().forEach(t => t.stop());
@@ -267,14 +250,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
 
     const handleSend = async (e?: React.FormEvent) => {
-        e?.preventDefault();
+        if (e) e.preventDefault();
         if (!inputText.trim() || isSending) return;
         setIsSending(true);
-        const text = inputText;
+        const text = inputText.trim();
+        const reply = quotedMessage;
         setInputText('');
+        setQuotedMessage(null);
         try {
             isAutoScrolling.current = true;
-            await onSendMessage(text);
+            await onSendMessage(text, reply || undefined);
         } finally {
             setIsSending(false);
             setTimeout(() => {
@@ -311,15 +296,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         audio.play().catch(() => setPlayingAudioUrl(null));
     };
 
-    const isImageUrl = (url: string) => {
-        const lower = url.toLowerCase();
-        if (lower.includes('voice_messages') || lower.includes('_voice.') || lower.includes('.webm') || lower.includes('.mp4')) return false;
-        return lower.startsWith('blob:') || (lower.startsWith('http') && (
-            lower.includes('.jpg') || lower.includes('.png') || lower.includes('.jpeg') ||
-            lower.includes('.webp') || (lower.includes('supabase') && lower.includes('chat_images'))
-        ));
-    };
-
     const openViewer = (url: string) => {
         const idx = galleryItems.findIndex(item => item.content === url);
         if (idx !== -1) setViewerIndex(idx);
@@ -330,18 +306,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
 
     const handleMessageClick = (msg: Message, e: React.MouseEvent) => {
-        if (user.isGM) {
-            e.stopPropagation();
-            setGmMenuId(msg.id);
-            return;
-        }
-        if (msg.userId === user.id && !msg.isRecalled) {
-            const timeDiff = Date.now() - msg.timestamp;
-            if (timeDiff < 30 * 60 * 1000) {
-                e.stopPropagation();
-                setRecallMenuId(msg.id);
-            }
-        }
+        if (msg.isRecalled) return;
+        e.stopPropagation();
+        setActiveMenuId(msg.id);
     };
 
     return (
@@ -355,7 +322,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <div className="absolute inset-0 bg-black/20" />
             </div>
 
-            <div className={`shrink-0 ${isMobile ? 'p-4 pb-2' : 'p-6 pb-2'} z-20 flex flex-col gap-3`}>
+            <div className={`shrink-0 z-30 transition-all duration-500 ${isMobile ? 'p-4 pt-1' : 'p-6 pt-1'} flex flex-col gap-2`}>
                 <div className="flex items-center justify-between">
                     <div className={`flex-1 flex items-center backdrop-blur-md p-1 h-9 rounded-[18px] border transition-colors ${theme === 'light' ? 'bg-white/40 border-black/5' : 'bg-[#1a1a1a]/50 border-white/5'}`}>
                         {[{ label: '世界', value: ScaleLevel.WORLD }, { label: '城市', value: ScaleLevel.CITY }, { label: '地区', value: ScaleLevel.DISTRICT }].map(tab => {
@@ -446,14 +413,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                         {messages.map((msg, index) => {
                             const isOwn = msg.userId === user.id;
-                            const isPlaying = playingAudioUrl === msg.content;
-                            const isVoice = msg.type === 'voice' || msg.content.includes('voice_messages');
-                            const isImg = msg.type === 'image' || (isImageUrl(msg.content) && !isVoice);
+                            const prevMsg = index > 0 ? messages[index - 1] : null;
+                            const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
 
-                            const prevMsg = messages[index - 1];
-                            const nextMsg = messages[index + 1];
-                            const isFirstInGroup = !prevMsg || prevMsg.userId !== msg.userId;
-                            const isLastInGroup = !nextMsg || nextMsg.userId !== msg.userId;
+                            const isFirstInGroup = !prevMsg || prevMsg.userId !== msg.userId || (msg.timestamp - prevMsg.timestamp > 5 * 60 * 1000);
+                            const isLastInGroup = !nextMsg || nextMsg.userId !== msg.userId || (nextMsg.timestamp - msg.timestamp > 5 * 60 * 1000);
+
+                            const isVoice = msg.type === 'voice';
+                            const isImg = msg.type === 'image';
 
                             if (msg.isRecalled) {
                                 return (
@@ -483,7 +450,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         {isImg ? (
                                             <div
                                                 className={`relative cursor-zoom-in rounded-[20px] transition-all shadow-xl p-[1.5px] overflow-hidden ${isOwn ? 'bubble-rainbow' : (theme === 'light' ? 'bg-white/40 backdrop-blur-md border border-black/5 mx-[0.5px]' : 'bg-[#1a1a1a]/40 backdrop-blur-md border border-white/5 mx-[0.5px]')}`}
-                                                onClick={(e) => recallMenuId ? setRecallMenuId(null) : openViewer(msg.content)}
+                                                onClick={(e) => activeMenuId ? setActiveMenuId(null) : openViewer(msg.content)}
                                                 onContextMenu={(e) => { e.preventDefault(); handleMessageClick(msg, e); }}
                                                 onPointerDown={(e) => {
                                                     const timer = setTimeout(() => handleMessageClick(msg, e as any), 600);
@@ -499,7 +466,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         ) : (
                                             <div
                                                 onClick={(e) => {
-                                                    if (recallMenuId) return setRecallMenuId(null);
+                                                    if (activeMenuId) return setActiveMenuId(null);
                                                     if (isVoice) playVoice(msg.content);
                                                 }}
                                                 onContextMenu={(e) => { e.preventDefault(); handleMessageClick(msg, e); }}
@@ -509,12 +476,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                     e.currentTarget.addEventListener('pointerup', clear, { once: true });
                                                     e.currentTarget.addEventListener('pointerleave', clear, { once: true });
                                                 }}
-                                                className={`relative px-4 flex items-center justify-center min-h-[34px] rounded-[20px] transition-all duration-500 w-fit shadow-xl cursor-pointer active:scale-[0.98] ${isVoice ? 'justify-center min-w-[120px]' : ''} ${isOwn ? `bubble-rainbow ${theme === 'light' ? 'text-gray-900' : 'text-white'}` : (theme === 'light' ? 'bg-white/60 backdrop-blur-md text-black/90 border border-black/5' : 'bg-[#1a1a1a]/40 backdrop-blur-md text-white/90 border border-white/5')}`}
+                                                className={`relative px-4 flex-col items-start justify-center min-h-[34px] rounded-[20px] transition-all duration-500 w-fit shadow-xl cursor-pointer active:scale-[0.98] ${isVoice ? 'justify-center min-w-[120px]' : ''} ${isOwn ? `bubble-rainbow ${theme === 'light' ? 'text-gray-900' : 'text-white'}` : (theme === 'light' ? 'bg-white/60 backdrop-blur-md text-black/90 border border-black/5' : 'bg-[#1a1a1a]/40 backdrop-blur-md text-white/90 border border-white/5')}`}
                                             >
+                                                {msg.replyTo && (
+                                                    <div className={`mb-1.5 p-2 rounded-lg text-[11px] border-l-2 bg-black/5 ${isOwn ? 'border-white/40 text-white/70' : (theme === 'light' ? 'border-black/20 text-black/60' : 'border-white/20 text-white/50')}`}>
+                                                        <div className="font-black mb-0.5">{msg.replyTo.userName}</div>
+                                                        <div className="opacity-80 line-clamp-2 truncate max-w-[200px]">{msg.replyTo.content}</div>
+                                                    </div>
+                                                )}
                                                 {isVoice ? (
-                                                    <div className="flex items-center justify-center gap-4 w-full">
-                                                        <div className={`flex items-center justify-center transition-all shrink-0 ${isPlaying ? (theme === 'light' ? 'text-black' : 'text-white') : (theme === 'light' ? 'text-black/60' : 'text-white/80')}`}>
-                                                            {isPlaying ? (
+                                                    <div className="flex items-center justify-center gap-4 w-full py-2">
+                                                        <div className={`flex items-center justify-center transition-all shrink-0 ${playingAudioUrl === msg.content ? (theme === 'light' ? 'text-black' : 'text-white') : (theme === 'light' ? 'text-black/60' : 'text-white/80')}`}>
+                                                            {playingAudioUrl === msg.content ? (
                                                                 <div className="flex gap-[1.5px] items-center justify-center">
                                                                     <div className="w-[2px] h-2.5 bg-current rounded-full" />
                                                                     <div className="w-[2px] h-2.5 bg-current rounded-full" />
@@ -525,7 +498,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                         </div>
                                                         <div className="flex items-end gap-[2px] h-3 opacity-60">
                                                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(i => (
-                                                                <div key={i} className={`w-[2px] rounded-full transition-all duration-300 ${isPlaying ? 'animate-wave-bounce' : ''} ${theme === 'light' ? 'bg-black' : 'bg-white'}`} style={{ height: isPlaying ? `${Math.random() * 80 + 20}%` : `${20 + (i % 4) * 20}%`, animationDelay: `${i * 0.05}s` }} />
+                                                                <div key={i} className={`w-[2px] rounded-full transition-all duration-300 ${playingAudioUrl === msg.content ? 'animate-wave-bounce' : ''} ${theme === 'light' ? 'bg-black' : 'bg-white'}`} style={{ height: playingAudioUrl === msg.content ? `${Math.random() * 80 + 20}%` : `${20 + (i % 4) * 20}%`, animationDelay: `${i * 0.05}s` }} />
                                                             ))}
                                                         </div>
                                                     </div>
@@ -535,59 +508,69 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                             </div>
                                         )}
 
-                                        {recallMenuId === msg.id && (
-                                            <div className={`absolute -top-10 ${isOwn ? 'right-0' : 'left-0'} z-50 animate-in zoom-in-95 fade-in duration-200`}>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onRecallMessage(msg.id);
-                                                        setRecallMenuId(null);
-                                                    }}
-                                                    className={`px-4 py-2 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
-                                                >
-                                                    撤回
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {gmMenuId === msg.id && user.isGM && (
+                                        {activeMenuId === msg.id && (
                                             <div className={`absolute -top-10 ${isOwn ? 'right-0' : 'left-0'} z-50 flex gap-2 animate-in zoom-in-95 fade-in duration-200`}>
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        const newName = prompt('输入该用户的新代号:', msg.userName);
-                                                        if (newName && onUpdateAnyUserName) {
-                                                            onUpdateAnyUserName(msg.userId, newName);
-                                                        }
-                                                        setGmMenuId(null);
+                                                        let content = msg.content;
+                                                        if (msg.type === 'voice') content = '[语音]';
+                                                        if (msg.type === 'image') content = '[图片]';
+                                                        setQuotedMessage({ userName: msg.userName, content });
+                                                        setActiveMenuId(null);
                                                     }}
-                                                    className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-amber-500/90 text-white' : 'bg-amber-600/90 text-white'}`}
+                                                    className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
                                                 >
-                                                    改名
+                                                    引用
                                                 </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (confirm('确定要永久抹除这条记录吗？') && onDeleteMessage) {
-                                                            onDeleteMessage(msg.id);
-                                                        }
-                                                        setGmMenuId(null);
-                                                    }}
-                                                    className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-red-500/90 text-white' : 'bg-red-600/90 text-white'}`}
-                                                >
-                                                    抹除
-                                                </button>
-                                                {!isOwn && (
+                                                {isOwn && (Date.now() - msg.timestamp < 30 * 60 * 1000) && (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             onRecallMessage(msg.id);
-                                                            setGmMenuId(null);
+                                                            setActiveMenuId(null);
                                                         }}
                                                         className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
                                                     >
                                                         撤回
                                                     </button>
+                                                )}
+                                                {user.isGM && (
+                                                    <>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const newName = prompt('输入该用户的新代号:', msg.userName);
+                                                                if (newName && onUpdateAnyUserName) onUpdateAnyUserName(msg.userId, newName);
+                                                                setActiveMenuId(null);
+                                                            }}
+                                                            className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl bg-amber-500/90 text-white`}
+                                                        >
+                                                            改名
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (confirm('确定要永久抹除这条记录吗？') && onDeleteMessage) onDeleteMessage(msg.id);
+                                                                setActiveMenuId(null);
+                                                            }}
+                                                            className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl bg-red-500/90 text-white`}
+                                                        >
+                                                            抹除
+                                                        </button>
+                                                        {!isOwn && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    onRecallMessage(msg.id);
+                                                                    setActiveMenuId(null);
+                                                                }}
+                                                                className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                                                            >
+                                                                撤回
+                                                            </button>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         )}
@@ -614,7 +597,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <div className="h-6" />
             </div>
 
-            {/* New Message Indicator */}
             {showNewMessageTip && activeSubTab === 'CHAT' && (
                 <div className="absolute bottom-16 left-0 right-0 z-[60] flex justify-center pointer-events-none animate-in slide-in-from-bottom-4 fade-in duration-300">
                     <button
@@ -630,52 +612,63 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 </div>
             )}
 
-            {
-                activeSubTab === 'CHAT' && (
-                    <div className={`shrink-0 z-20 ${isMobile ? 'px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))]' : 'p-6 pt-1'}`}>
-                        <div className={`backdrop-blur-md h-9 rounded-[18px] p-1 border shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center relative ${theme === 'light' ? 'bg-white/60 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10'}`}>
-                            <button type="button" onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')} className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${inputMode === 'voice' ? 'bg-white text-black shadow-lg scale-105' : (theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black/60 hover:bg-black/10' : 'bg-white/5 text-white/50 hover:text-white/70 hover:bg-white/10')}`}>
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                </svg>
+            {activeSubTab === 'CHAT' && (
+                <div className={`shrink-0 z-20 ${isMobile ? 'px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))]' : 'p-6 pt-1'}`}>
+                    {quotedMessage && (
+                        <div className={`mb-2 p-2 rounded-xl backdrop-blur-xl border flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 duration-300 ${theme === 'light' ? 'bg-black/5 border-black/5 text-black' : 'bg-white/5 border-white/10 text-white'}`}>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-0.5 truncate">引用 {quotedMessage.userName}</div>
+                                <div className="text-[12px] opacity-80 truncate">{quotedMessage.content}</div>
+                            </div>
+                            <button onClick={() => setQuotedMessage(null)} className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:bg-black/10 transition-colors">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
+                        </div>
+                    )}
+                    <div className={`backdrop-blur-md h-9 rounded-[18px] p-1 border shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center relative ${theme === 'light' ? 'bg-white/60 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10'}`}>
+                        <button type="button" onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')} className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${inputMode === 'voice' ? 'bg-white text-black shadow-lg scale-105' : (theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black/60 hover:bg-black/10' : 'bg-white/5 text-white/50 hover:text-white/70 hover:bg-white/10')}`}>
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                            </svg>
+                        </button>
 
-                            {inputMode === 'text' && (
-                                <div className="relative flex items-center h-7 px-1">
-                                    <button
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
-                                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${showEmojiPicker ? 'bg-white/20' : 'hover:bg-white/5'} text-lg`}
+                        {inputMode === 'text' && (
+                            <div className="relative flex items-center h-7 px-1">
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
+                                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${showEmojiPicker ? 'bg-white/20' : 'hover:bg-white/5'} text-lg`}
+                                >
+                                    😀
+                                </button>
+
+                                {showEmojiPicker && (
+                                    <div
+                                        className={`absolute bottom-[calc(100%+12px)] left-0 z-50 p-2.5 rounded-[24px] backdrop-blur-3xl border border-white/10 shadow-2xl grid grid-cols-5 gap-1 w-48 animate-in fade-in slide-in-from-bottom-2 duration-200 ${theme === 'light' ? 'bg-white/95' : 'bg-[#1a1a1a]/95'}`}
+                                        onClick={(e) => e.stopPropagation()}
                                     >
-                                        😀
-                                    </button>
+                                        {COMMON_EMOJIS.map(emoji => (
+                                            <button
+                                                key={emoji}
+                                                type="button"
+                                                onClick={() => { setInputText(prev => prev + emoji); setShowEmojiPicker(false); inputRef.current?.focus(); }}
+                                                className="w-8 h-8 flex items-center justify-center text-xl hover:scale-120 hover:bg-white/5 rounded-xl transition-all active:scale-90"
+                                            >
+                                                {emoji}
+                                            </button>
+                                        ))}
+                                        <div className={`absolute bottom-[-5px] left-3 w-2.5 h-2.5 rotate-45 border-b border-r border-white/10 ${theme === 'light' ? 'bg-white/95' : 'bg-[#1a1a1a]/95'}`} />
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
-                                    {showEmojiPicker && (
-                                        <div
-                                            className={`absolute bottom-[calc(100%+12px)] left-0 z-50 p-2.5 rounded-[24px] backdrop-blur-3xl border border-white/10 shadow-2xl grid grid-cols-5 gap-1 w-48 animate-in fade-in slide-in-from-bottom-2 duration-200 ${theme === 'light' ? 'bg-white/95' : 'bg-[#1a1a1a]/95'}`}
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            {COMMON_EMOJIS.map(emoji => (
-                                                <button
-                                                    key={emoji}
-                                                    type="button"
-                                                    onClick={() => { setInputText(prev => prev + emoji); setShowEmojiPicker(false); inputRef.current?.focus(); }}
-                                                    className="w-8 h-8 flex items-center justify-center text-xl hover:scale-120 hover:bg-white/5 rounded-xl transition-all active:scale-90"
-                                                >
-                                                    {emoji}
-                                                </button>
-                                            ))}
-                                            <div className={`absolute bottom-[-5px] left-3 w-2.5 h-2.5 rotate-45 border-b border-r border-white/10 ${theme === 'light' ? 'bg-white/95' : 'bg-[#1a1a1a]/95'}`} />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className={`flex-1 flex items-center h-7 overflow-hidden ${inputMode === 'text' ? 'mx-1' : 'ml-2'}`}>
-                                {inputMode === 'text' ? (
-                                    <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 h-full">
-                                        <button type="button" onClick={() => fileInputRef.current?.click()} className={`w-6 h-6 rounded-full flex items-center justify-center transition-all shrink-0 text-lg font-light ${theme === 'light' ? 'text-black/20 hover:text-black' : 'text-white/40 hover:text-white'}`}>+</button>
-                                        <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadImage(f); }} accept="image/*" className="hidden" />
+                        <div className={`flex-1 flex items-center h-7 overflow-hidden ${inputMode === 'text' ? 'mx-1' : 'ml-2'}`}>
+                            {inputMode === 'text' ? (
+                                <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 h-full">
+                                    <button type="button" onClick={() => fileInputRef.current?.click()} className={`w-6 h-6 rounded-full flex items-center justify-center transition-all shrink-0 text-lg font-light ${theme === 'light' ? 'text-black/20 hover:text-black' : 'text-white/40 hover:text-white'}`}>+</button>
+                                    <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) { const reply = quotedMessage; setQuotedMessage(null); onUploadImage(f, reply || undefined); } }} accept="image/*" className="hidden" />
+                                    <div className="flex-1 relative flex items-center h-full min-w-0">
                                         <input
                                             type="text"
                                             ref={inputRef}
@@ -684,74 +677,81 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                             onChange={(e) => setInputText(e.target.value)}
                                             onFocus={() => {
                                                 if (isMobile) {
-                                                    // Instant scroll on focus to catch keyboard pop-up
                                                     setTimeout(() => scrollToBottom('smooth'), 100);
                                                 }
                                             }}
                                             placeholder="..."
-                                            className={`flex-1 min-w-0 bg-transparent text-base font-bold focus:outline-none ${theme === 'light' ? 'text-black placeholder:text-black/15' : 'text-white placeholder:text-white/20'}`}
+                                            className={`w-full bg-transparent text-base font-bold focus:outline-none pr-8 ${theme === 'light' ? 'text-black placeholder:text-black/15' : 'text-white placeholder:text-white/20'}`}
                                             disabled={isSending}
                                         />
-                                    </form>
-                                ) : (
-                                    <button onPointerDown={(e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (e) { } startRecording(); }} onPointerUp={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} onPointerCancel={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} className={`flex-1 h-7 rounded-full font-bold tracking-[0.1em] text-[10px] uppercase transition-all select-none touch-none flex items-center justify-center ${isRecording ? 'bg-white text-black animate-pulse scale-[0.98]' : (theme === 'light' ? 'bg-black/5 text-black/20 hover:bg-black/10' : 'bg-white/5 text-white/40 hover:bg-white/10')}`}>
-                                        {isRecording ? '松开发送' : '按住说话'}
-                                    </button>
-                                )}
-                            </div>
-                            <button onClick={() => inputMode === 'text' && handleSend()} className={`rounded-full flex items-center justify-center transition-all bg-white text-black shrink-0 ${inputMode === 'text' ? 'w-7 h-7' : 'w-0 h-7 border-0 p-0 overflow-hidden'} ${inputMode === 'text' && inputText.trim() ? 'opacity-100 scale-100 active:scale-95 shadow-xl' : 'opacity-0 scale-50 pointer-events-none'}`}>
-                                <svg className="w-4 h-4 translate-x-[0.5px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 5l7 7-7 7M5 12h15" />
-                                </svg>
-                            </button>
+                                        {inputText && (
+                                            <button
+                                                type="button"
+                                                onClick={() => { setInputText(''); inputRef.current?.focus(); }}
+                                                className={`absolute right-0 w-6 h-6 rounded-full flex items-center justify-center transition-all ${theme === 'light' ? 'bg-black/10 text-black hover:bg-black/20' : 'bg-white/20 text-white hover:bg-white/30'}`}
+                                            >
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        )}
+                                    </div>
+                                </form>
+                            ) : (
+                                <button onPointerDown={(e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (e) { } startRecording(); }} onPointerUp={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} onPointerCancel={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} className={`flex-1 h-7 rounded-full font-bold tracking-[0.1em] text-[10px] uppercase transition-all select-none touch-none flex items-center justify-center ${isRecording ? 'bg-white text-black animate-pulse scale-[0.98]' : (theme === 'light' ? 'bg-black/5 text-black/20 hover:bg-black/10' : 'bg-white/5 text-white/40 hover:bg-white/10')}`}>
+                                    {isRecording ? '松开发送' : '按住说话'}
+                                </button>
+                            )}
+                        </div>
+                        <button onClick={() => inputMode === 'text' && handleSend()} className={`rounded-full flex items-center justify-center transition-all bg-white text-black shrink-0 ${inputMode === 'text' ? 'w-7 h-7' : 'w-0 h-7 border-0 p-0 overflow-hidden'} ${inputMode === 'text' && inputText.trim() ? 'opacity-100 scale-100 active:scale-95 shadow-xl' : 'opacity-0 scale-50 pointer-events-none'}`}>
+                            <svg className="w-4 h-4 translate-x-[0.5px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 5l7 7-7 7M5 12h15" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {viewerIndex !== null && typeof document !== 'undefined' && (
+                <div className={`fixed inset-0 z-[99999] flex flex-col transition-all duration-500 backdrop-blur-3xl ${theme === 'light' ? 'bg-white/90' : 'bg-black/80'}`} onClick={() => setViewerIndex(null)}>
+                    <div className="absolute top-6 right-6 z-[120] pointer-events-auto">
+                        <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border shadow-2xl ${theme === 'light' ? 'bg-black/10 hover:bg-black text-black/60 hover:text-white border-black/10' : 'bg-white/10 hover:bg-white text-white/60 hover:text-black border-white/10'}`}>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+
+                    <div className="flex-1 relative flex items-center justify-center p-4 md:p-12 overflow-hidden pointer-events-none">
+                        <div className="relative flex items-center justify-center">
+                            <img
+                                src={galleryItems[viewerIndex].content}
+                                className={`max-w-full max-h-full object-contain select-none pointer-events-auto ${theme === 'light' ? 'shadow-[0_0_100px_rgba(0,0,0,0.2)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.8)]'}`}
+                                alt="Viewer"
+                                onClick={(e) => e.stopPropagation()}
+                            />
                         </div>
                     </div>
-                )
-            }
 
-            {/* Viewer Portal */}
-            {
-                viewerIndex !== null && typeof document !== 'undefined' && (
-                    <div className={`fixed inset-0 z-[99999] flex flex-col transition-all duration-500 backdrop-blur-3xl ${theme === 'light' ? 'bg-white/90' : 'bg-black/80'}`} onClick={() => setViewerIndex(null)}>
-                        <div className="absolute top-6 right-6 z-[120] pointer-events-auto">
-                            <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border shadow-2xl ${theme === 'light' ? 'bg-black/10 hover:bg-black text-black/60 hover:text-white border-black/10' : 'bg-white/10 hover:bg-white text-white/60 hover:text-black border-white/10'}`}>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
+                    <div className="p-6 pt-0 pb-12 md:pb-6 shrink-0 z-[110] flex justify-center pointer-events-none">
+                        <div className="w-full max-w-[460px] flex items-center gap-2 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+                            <button disabled={viewerIndex === 0} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! - 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === 0 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg></button>
 
-                        <div className="flex-1 relative flex items-center justify-center p-4 md:p-12 overflow-hidden pointer-events-none">
-                            <div className="relative flex items-center justify-center">
-                                <img
-                                    src={galleryItems[viewerIndex].content}
-                                    className={`max-w-full max-h-full object-contain select-none pointer-events-auto ${theme === 'light' ? 'shadow-[0_0_100px_rgba(0,0,0,0.2)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.8)]'}`}
-                                    alt="Viewer"
-                                    onClick={(e) => e.stopPropagation()}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="p-6 pt-0 pb-12 md:pb-6 shrink-0 z-[110] flex justify-center pointer-events-none">
-                            <div className="w-full max-w-[460px] flex items-center gap-2 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                                <button disabled={viewerIndex === 0} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! - 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === 0 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg></button>
-
-                                <div className={`flex-1 backdrop-blur-3xl h-9 rounded-[18px] px-4 border shadow-[0_20px_50px_rgba(0,0,0,0.2)] flex items-center justify-between min-0 ${theme === 'light' ? 'bg-white/90 border-black/10' : 'bg-[#1a1a1a]/90 border-white/10'}`}>
-                                    <div className="flex items-center gap-3 min-0">
-                                        <div className={`w-2 h-2 rounded-full shrink-0 ${theme === 'light' ? 'bg-black/60 shadow-[0_0_8px_rgba(0,0,0,0.3)]' : 'bg-white/60 shadow-[0_0_8px_rgba(255,255,255,0.5)]'}`} />
-                                        <span className={`text-[11px] font-black tracking-[0.1em] uppercase truncate ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>{galleryItems[viewerIndex].userName}</span>
-                                    </div>
-                                    <div className="flex items-center gap-3 shrink-0 ml-2">
-                                        <span className={`text-[10px] font-black tracking-[0.1em] tabular-nums whitespace-nowrap ${theme === 'light' ? 'text-black/50' : 'text-white/50'}`}>{formatTimeSimple(new Date(galleryItems[viewerIndex].timestamp))}</span>
-                                        <div className={`w-px h-4 ${theme === 'light' ? 'bg-black/10' : 'bg-white/10'}`} />
-                                        <span className={`text-[10px] font-black tracking-[0.1em] whitespace-nowrap ${theme === 'light' ? 'text-black/40' : 'text-white/40'}`}>{viewerIndex + 1}/{galleryItems.length}</span>
-                                    </div>
+                            <div className={`flex-1 backdrop-blur-3xl h-9 rounded-[18px] px-4 border shadow-[0_20px_50px_rgba(0,0,0,0.2)] flex items-center justify-between min-0 ${theme === 'light' ? 'bg-white/90 border-black/10' : 'bg-[#1a1a1a]/90 border-white/10'}`}>
+                                <div className="flex items-center gap-3 min-0">
+                                    <div className={`w-2 h-2 rounded-full shrink-0 ${theme === 'light' ? 'bg-black/60 shadow-[0_0_8px_rgba(0,0,0,0.3)]' : 'bg-white/60 shadow-[0_0_8px_rgba(255,255,255,0.5)]'}`} />
+                                    <span className={`text-[11px] font-black tracking-[0.1em] uppercase truncate ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>{galleryItems[viewerIndex].userName}</span>
                                 </div>
-
-                                <button disabled={viewerIndex === galleryItems.length - 1} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! + 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === galleryItems.length - 1 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg></button>
+                                <div className="flex items-center gap-3 shrink-0 ml-2">
+                                    <span className={`text-[10px] font-black tracking-[0.1em] tabular-nums whitespace-nowrap ${theme === 'light' ? 'text-black/50' : 'text-white/50'}`}>{formatTimeSimple(new Date(galleryItems[viewerIndex].timestamp))}</span>
+                                    <div className={`w-px h-4 ${theme === 'light' ? 'bg-black/10' : 'bg-white/10'}`} />
+                                    <span className={`text-[10px] font-black tracking-[0.1em] whitespace-nowrap ${theme === 'light' ? 'text-black/40' : 'text-white/40'}`}>{viewerIndex + 1}/{galleryItems.length}</span>
+                                </div>
                             </div>
+
+                            <button disabled={viewerIndex === galleryItems.length - 1} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! + 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === galleryItems.length - 1 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg></button>
                         </div>
                     </div>
-                )
-            }
-        </div >
+                </div>
+            )}
+        </div>
     );
 };
