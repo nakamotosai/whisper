@@ -889,7 +889,7 @@ export default function Home() {
 
             <div className="flex flex-col gap-1 px-1">
               <div className="flex items-center gap-2">
-                <img src="/logo.png" className="w-6 h-6 object-contain" alt="Logo" />
+                <img src="/logo.png" onClick={handleLogoClick} className="w-6 h-6 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
                 <h3 className="text-white text-xs font-black uppercase tracking-widest opacity-50">乌托邦</h3>
               </div>
               <p className="text-white/35 text-[9px] font-bold uppercase tracking-wider">Privacy secured with 2km random offset</p>
@@ -930,7 +930,7 @@ export default function Home() {
             <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/5 backdrop-blur-xl">
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-3">
-                  <img src="/logo.png" className="w-8 h-8 object-contain" alt="Logo" />
+                  <img src="/logo.png" onClick={handleLogoClick} className="w-8 h-8 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
                   <h2 className="text-lg font-black text-white tracking-widest uppercase">进化建议看板</h2>
                 </div>
                 <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className="text-[10px] font-black text-white/50 uppercase tracking-widest">实时接收其他特工建议</span></div>
