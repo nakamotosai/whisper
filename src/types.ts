@@ -30,6 +30,7 @@ export interface Message {
         userName: string;
         content: string;
     };
+    voiceDuration?: number;
 }
 
 export interface RoomStats {

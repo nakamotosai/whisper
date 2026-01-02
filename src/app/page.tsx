@@ -562,7 +562,7 @@ export default function Home() {
         const fetched = data.map((m: any) => ({
           id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
           content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
-          isGM: m.is_gm, replyTo: m.reply_to
+          isGM: m.is_gm, replyTo: m.reply_to, voiceDuration: m.voice_duration
         })).reverse();
 
         setAllMessages(prev => {
@@ -622,7 +622,7 @@ export default function Home() {
         const fetched = data.map((m: any) => ({
           id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
           content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
-          isGM: m.is_gm, replyTo: m.reply_to
+          isGM: m.is_gm, replyTo: m.reply_to, voiceDuration: m.voice_duration
         })).reverse();
         setAllMessages(prev => ({ ...prev, [scale]: fetched }));
         setHasMore(prev => ({ ...prev, [scale]: data.length >= 30 }));
@@ -672,7 +672,7 @@ export default function Home() {
         const fetched = data.map((m: any) => ({
           id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
           content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
-          isGM: m.is_gm, replyTo: m.reply_to
+          isGM: m.is_gm, replyTo: m.reply_to, voiceDuration: m.voice_duration
         })).reverse();
         setAllMessages(prev => ({ ...prev, [scale]: fetched }));
         setHasMore(prev => ({ ...prev, [scale]: data.length >= 30 }));
@@ -870,7 +870,8 @@ export default function Home() {
         type: 'voice' as const,
         countryCode: currentUser.countryCode,
         isGM: currentUser.isGM,
-        replyTo
+        replyTo,
+        voiceDuration: duration
       };
       setAllMessages(prev => ({ ...prev, [activeScale]: [...prev[activeScale], msg] }));
       const { error: dbError } = await supabase.from('messages').insert({
@@ -884,7 +885,8 @@ export default function Home() {
         type: 'voice',
         is_gm: currentUser.isGM,
         country_code: currentUser.countryCode,
-        reply_to: replyTo
+        reply_to: replyTo,
+        voice_duration: duration
       });
       if (dbError) {
         console.error('Insert voice failed:', dbError);
@@ -1203,6 +1205,14 @@ export default function Home() {
                 @keyframes rainbow-drift { 0% { filter: hue-rotate(0deg); } 100% { filter: hue-rotate(360deg); } }
                 .custom-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
                 .custom-scrollbar::-webkit-scrollbar { display: none; }
+                
+                @keyframes wave-bounce {
+                    0%, 100% { transform: scaleY(1); }
+                    50% { transform: scaleY(1.5); }
+                }
+                .animate-wave-bounce {
+                    animation: wave-bounce 0.5s ease-in-out infinite;
+                }
                 
                 /* Option B: Liquid Glow Cursor Implementation */
                 * {

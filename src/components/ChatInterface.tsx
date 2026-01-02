@@ -458,7 +458,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                 className={`relative px-4 flex-col items-start justify-center min-h-[34px] rounded-[20px] transition-all duration-500 w-fit shadow-xl cursor-pointer active:scale-[0.98] ${isVoice ? 'justify-center min-w-[120px]' : ''} ${isOwn ? `bubble-rainbow ${theme === 'light' ? 'text-gray-900' : 'text-white'}` : (theme === 'light' ? 'bg-white/60 backdrop-blur-md text-black/90 border border-black/5' : 'bg-[#1a1a1a]/40 backdrop-blur-md text-white/90 border border-white/5')}`}
                                             >
                                                 {isVoice ? (
-                                                    <div className="flex items-center justify-center gap-4 w-full py-2">
+                                                    <div className="flex items-center gap-3 w-full py-2">
                                                         <div className={`flex items-center justify-center transition-all shrink-0 ${playingAudioUrl === msg.content ? (theme === 'light' ? 'text-black' : 'text-white') : (theme === 'light' ? 'text-black/60' : 'text-white/80')}`}>
                                                             {playingAudioUrl === msg.content ? (
                                                                 <div className="flex gap-[1.5px] items-center justify-center">
@@ -469,10 +469,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                                 <div className="w-0 h-0 border-t-[4px] border-t-transparent border-l-[7px] border-l-current border-b-[4px] border-b-transparent ml-[2px]" />
                                                             )}
                                                         </div>
-                                                        <div className="flex items-end gap-[2px] h-3 opacity-60">
-                                                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(i => (
-                                                                <div key={i} className={`w-[2px] rounded-full transition-all duration-300 ${playingAudioUrl === msg.content ? 'animate-wave-bounce' : ''} ${theme === 'light' ? 'bg-black' : 'bg-white'}`} style={{ height: playingAudioUrl === msg.content ? `${Math.random() * 80 + 20}%` : `${20 + (i % 4) * 20}%`, animationDelay: `${i * 0.05}s` }} />
-                                                            ))}
+                                                        <div className="flex items-end gap-[2.5px] h-4 opacity-80 flex-1">
+                                                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(i => {
+                                                                const h = 30 + (Math.sin(i * 0.8) * 20 + 20);
+                                                                return (
+                                                                    <div
+                                                                        key={i}
+                                                                        className={`w-[2px] rounded-full transition-all duration-500 ${playingAudioUrl === msg.content ? 'animate-wave-bounce' : ''} ${theme === 'light' ? 'bg-black/80' : 'bg-white/80'}`}
+                                                                        style={{
+                                                                            height: `${h}%`,
+                                                                            animationDelay: `${i * 0.08}s`
+                                                                        }}
+                                                                    />
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        <div className={`text-[10px] font-black font-mono shrink-0 ml-1 ${theme === 'light' ? 'text-black/40' : 'text-white/50'}`}>
+                                                            {msg.voiceDuration || 0}"
                                                         </div>
                                                     </div>
                                                 ) : (
