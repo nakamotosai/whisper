@@ -429,7 +429,9 @@ export const MapBackground = memo(({
         onLocationChange({ lat: initialPosition[0], lng: initialPosition[1], zoom: forcedZoom });
     }, [initialPosition, forcedZoom, onLocationChange]);
 
-    const handleHover = useCallback((h3Index: string | null) => {
+    const handleMouseHover = useCallback((h3Index: string | null) => {
+        // Disable H3 hover on touch devices to save CPU
+        if (typeof window !== 'undefined' && 'ontouchstart' in window) return;
         setHoveredH3Index(h3Index);
     }, []);
 
@@ -445,7 +447,7 @@ export const MapBackground = memo(({
         className: 'self-marker',
         html: `
             <div style="position:relative;width:50px;height:50px;display:flex;align-items:center;justify-content:center;">
-                <div style="position:absolute;width:100%;height:100%;border-radius:50%;background:white;opacity:0.1;animation:self-wave 3s infinite;"></div>
+                <div style="position:absolute;width:100%;height:100%;border-radius:50%;background:white;opacity:0.1;"></div>
                 <div style="width:14px;height:14px;background:white;border-radius:50%;box-shadow:0 0 20px white, 0 0 8px ${color};border:2px solid ${color};z-index:10;"></div>
             </div>
         `,
@@ -463,32 +465,11 @@ export const MapBackground = memo(({
                 @keyframes self-wave { 0% {transform:scale(0.3);opacity:0.6;} 100% {transform:scale(1.4);opacity:0;} }
                 .leaflet-container { background: ${isDark ? '#090909' : '#f3f4f6'} !important; outline: none !important; }
                 
-                /* Smooth tile loading */
+                /* Optimized tile loading - removed heavy filters */
                 .leaflet-tile {
-                    transition: opacity 0.25s ease-in-out !important;
-                    will-change: opacity;
-                }
-                .leaflet-fade-anim .leaflet-tile {
-                    transition: opacity 0.25s ease-in-out !important;
+                    will-change: transform;
                 }
                 
-                ${isDark ? `
-                .leaflet-tile-pane { 
-                    filter: invert(1) grayscale(1) brightness(0.9) contrast(0.85);
-                    opacity: 1;
-                    transition: filter 0.5s ease;
-                    transform: translateZ(0);
-                    backface-visibility: hidden;
-                }
-                ` : `
-                .leaflet-tile-pane {
-                    filter: grayscale(0.2) contrast(1.1);
-                    opacity: 0.99;
-                    transition: filter 0.5s ease;
-                    transform: translateZ(0);
-                }
-                `}
-
                 .user-hex-outline { 
                    filter: drop-shadow(0 0 10px ${activeConfig.hex}); 
                 }
@@ -524,17 +505,19 @@ export const MapBackground = memo(({
                 <MapInvalidator />
                 <PaddedSvgRenderer />
                 <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                    url={isDark
+                        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                        : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"}
                     subdomains="abcd"
                     maxZoom={20}
-                    keepBuffer={10}
-                    updateWhenIdle={false}
+                    keepBuffer={2}
+                    updateWhenIdle={true}
                     updateWhenZooming={false}
                 />
                 <MapEvents onMove={onLocationChange} onZoomChange={setZoom} onInteraction={() => onLocationChange({ lat: 0, lng: 0, zoom: 0, isInteraction: true })} onMoveStateChange={setIsMoving} isControlled={forcedZoom !== null} />
                 <MapController center={initialPosition} forcedZoom={forcedZoom} onAnimationComplete={onAnimationComplete} />
                 <DiscreteZoomController />
-                <MouseHoverHandler onHover={handleHover} zoom={zoom} />
+                <MouseHoverHandler onHover={handleMouseHover} zoom={zoom} />
                 <ActivityLayer fetchActivity={fetchActivity} onMarkerClick={onMarkerClick} zoom={zoom} isMoving={isMoving} />
 
                 {/* Hover hexagon - shows on mouse move */}

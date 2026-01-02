@@ -200,3 +200,36 @@
     display: none !important;
   }
 }
+
+/* Admin Rainbow Username Animation */
+@keyframes rainbow-scroll {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.text-rainbow-scroll {
+  background: linear-gradient(to right,
+      #ff0000,
+      #ff7f00,
+      #ffff00,
+      #00ff00,
+      #0000ff,
+      #4b0082,
+      #9400d3,
+      #ff0000);
+  background-size: 200% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: rainbow-scroll 3s linear infinite;
+  display: inline-block;
+}
