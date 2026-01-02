@@ -25,25 +25,28 @@ export const PWAInstaller: React.FC<PWAInstallerProps> = ({ theme = 'dark' }) =>
         const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
         setIsIOS(isIOSDevice);
 
+        const canShowPrompt = () => {
+            if (isStandaloneMode) return false;
+            const lastShown = localStorage.getItem('pwa_prompt_last_shown');
+            if (!lastShown) return true;
+            const now = Date.now();
+            return now - parseInt(lastShown) > 24 * 60 * 60 * 1000;
+        };
+
         // Listen for BeforeInstallPrompt (Chrome/Android/Desktop)
         const handleBeforeInstallPrompt = (e: any) => {
             e.preventDefault();
             setDeferredPrompt(e);
-            if (!isStandaloneMode) {
+            if (canShowPrompt()) {
                 setShowPrompt(true);
             }
         };
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-        // Show prompt for iOS if not standalone
-        if (isIOSDevice && !isStandaloneMode) {
-            // Only show if not shown recently
-            const lastShown = localStorage.getItem('pwa_prompt_last_shown');
-            const now = Date.now();
-            if (!lastShown || now - parseInt(lastShown) > 24 * 60 * 60 * 1000) {
-                setShowPrompt(true);
-            }
+        // Show prompt for iOS if not standalone and cooldown passed
+        if (isIOSDevice && canShowPrompt()) {
+            setShowPrompt(true);
         }
 
         return () => {

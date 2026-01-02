@@ -444,19 +444,10 @@ export const MapBackground = memo(({
     if (!domReady) return <div className="absolute inset-0 bg-black" />;
 
     const selfIcon = (color: string) => L.divIcon({
-        className: 'self-marker-wrapper',
-        html: `
-            <div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;">
-                <!-- Precision Outer Ring -->
-                <div style="position:absolute;width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,0.25);background:rgba(255,255,255,0.08);"></div>
-                <!-- Scale Color Accent -->
-                <div style="position:absolute;width:16px;height:16px;border-radius:50%;border:2px solid ${color};box-shadow:0 0 15px ${color};"></div>
-                <!-- Core Signal -->
-                <div style="width:6px;height:6px;background:white;border-radius:50%;box-shadow:0 0 12px white;z-index:10;"></div>
-            </div>
-        `,
-        iconSize: [40, 40],
-        iconAnchor: [20, 20]
+        className: 'self-marker-solid',
+        html: `<div style="width:14px;height:14px;background:${color};border-radius:50%;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.5);"></div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
     });
 
     const isDark = theme === 'dark';

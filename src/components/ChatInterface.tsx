@@ -446,7 +446,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         </div>
                                     )}
 
-                                    <div className="relative group/bubble max-w-[85%]">
+                                    <div className={`relative flex flex-col ${isOwn ? 'items-end' : 'items-start'} group/bubble max-w-[85%]`}>
+                                        {msg.replyTo && (
+                                            <div className={`mb-1 p-2 rounded-xl text-[10px] border shadow-sm backdrop-blur-md transition-all ${isOwn ? 'mr-1 border-white/10 bg-white/5 text-white/50' : 'ml-1 border-black/5 bg-black/5 text-black/40'}`}>
+                                                <div className="font-black mb-0.5 truncate max-w-[150px]">{msg.replyTo.userName}</div>
+                                                <div className="opacity-80 line-clamp-1 truncate max-w-[150px]">{msg.replyTo.content}</div>
+                                            </div>
+                                        )}
                                         {isImg ? (
                                             <div
                                                 className={`relative cursor-zoom-in rounded-[20px] transition-all shadow-xl p-[1.5px] overflow-hidden ${isOwn ? 'bubble-rainbow' : (theme === 'light' ? 'bg-white/40 backdrop-blur-md border border-black/5 mx-[0.5px]' : 'bg-[#1a1a1a]/40 backdrop-blur-md border border-white/5 mx-[0.5px]')}`}
@@ -478,12 +484,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                 }}
                                                 className={`relative px-4 flex-col items-start justify-center min-h-[34px] rounded-[20px] transition-all duration-500 w-fit shadow-xl cursor-pointer active:scale-[0.98] ${isVoice ? 'justify-center min-w-[120px]' : ''} ${isOwn ? `bubble-rainbow ${theme === 'light' ? 'text-gray-900' : 'text-white'}` : (theme === 'light' ? 'bg-white/60 backdrop-blur-md text-black/90 border border-black/5' : 'bg-[#1a1a1a]/40 backdrop-blur-md text-white/90 border border-white/5')}`}
                                             >
-                                                {msg.replyTo && (
-                                                    <div className={`mb-1.5 p-2 rounded-lg text-[11px] border-l-2 bg-black/5 ${isOwn ? 'border-white/40 text-white/70' : (theme === 'light' ? 'border-black/20 text-black/60' : 'border-white/20 text-white/50')}`}>
-                                                        <div className="font-black mb-0.5">{msg.replyTo.userName}</div>
-                                                        <div className="opacity-80 line-clamp-2 truncate max-w-[200px]">{msg.replyTo.content}</div>
-                                                    </div>
-                                                )}
                                                 {isVoice ? (
                                                     <div className="flex items-center justify-center gap-4 w-full py-2">
                                                         <div className={`flex items-center justify-center transition-all shrink-0 ${playingAudioUrl === msg.content ? (theme === 'light' ? 'text-black' : 'text-white') : (theme === 'light' ? 'text-black/60' : 'text-white/80')}`}>
