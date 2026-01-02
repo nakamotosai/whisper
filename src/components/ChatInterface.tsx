@@ -151,37 +151,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }, [messages, isOpen, activeSubTab, scale, roomId]);
 
     useEffect(() => {
-        if (isOpen && activeSubTab === 'CHAT' && messages.length > 0) {
-            const timer = setTimeout(() => scrollToBottom('smooth'), 100);
-            return () => clearTimeout(timer);
-        }
-    }, [isOpen, activeSubTab, messages.length]);
-
-    useEffect(() => {
-        const handleResize = () => {
-            if (activeSubTab === 'CHAT' && isOpen) {
-                scrollToBottom('auto');
-                setTimeout(() => scrollToBottom('smooth'), 100);
-                setTimeout(() => scrollToBottom('smooth'), 300);
-            }
-        };
-        window.visualViewport?.addEventListener('resize', handleResize);
-        return () => window.visualViewport?.removeEventListener('resize', handleResize);
-    }, [activeSubTab, isOpen]);
-
-    useEffect(() => {
-        if (!scrollRef.current || activeSubTab !== 'CHAT') return;
-        const observer = new ResizeObserver(() => {
-            if (isOpen) {
-                scrollToBottom('auto');
-                setTimeout(() => scrollToBottom('smooth'), 100);
-            }
-        });
-        observer.observe(scrollRef.current);
-        return () => observer.disconnect();
-    }, [activeSubTab, isOpen]);
-
-    useEffect(() => {
         const handleClickOutside = () => {
             setActiveMenuId(null);
             setShowEmojiPicker(false);
