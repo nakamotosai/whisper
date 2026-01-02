@@ -316,7 +316,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
 
             <div
-                className={`flex-1 relative ${activeSubTab === 'CHAT' ? '' : 'overflow-y-auto px-6 py-2 scrollbar-hide overscroll-contain touch-pan-y'}`}
+                className={`flex-1 relative overflow-hidden ${activeSubTab === 'CHAT' ? '' : 'overflow-y-auto px-6 py-2 scrollbar-hide overscroll-contain touch-pan-y'}`}
                 style={activeSubTab === 'CHAT' ? {
                     maskImage: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0) 2px, rgba(0,0,0,0.1) 6px, rgba(0,0,0,0.4) 12px, black 24px)',
                     WebkitMaskImage: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0) 2px, rgba(0,0,0,0.1) 6px, rgba(0,0,0,0.4) 12px, black 24px)',
@@ -477,7 +477,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         ))}
                     </div>
                 )}
-                <div className="h-6" />
             </div>
 
             {/* Input Area (Text/Voice) - same as before, preserved */}
