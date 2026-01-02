@@ -684,7 +684,7 @@ export default function Home() {
         </div>
       )}
       <div
-        className={`fixed transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)] z-[1000] ${(!isMobile || isChatOpen) ? (isMobile ? 'top-[4vw] left-[4vw] right-[4vw] bottom-[max(4vw,env(safe-area-inset-bottom))]' : 'top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100') : (isMobile ? 'translate-y-[120%] opacity-0' : 'top-6 right-6 bottom-6 w-[360px] translate-x-[120%] opacity-0')}`}
+        className={`absolute transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)] z-[1000] ${(!isMobile || isChatOpen) ? (isMobile ? 'top-[4vw] left-[4vw] right-[4vw] bottom-[max(4vw,env(safe-area-inset-bottom))]' : 'top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100') : (isMobile ? 'translate-y-[120%] opacity-0' : 'top-6 right-6 bottom-6 w-[360px] translate-x-[120%] opacity-0')}`}
         onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
         onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
       >
