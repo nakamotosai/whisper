@@ -9,14 +9,26 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'edge';
 
 // Initialize S3 client for R2
-const R2 = new S3Client({
-    region: 'auto',
-    endpoint: process.env.R2_ENDPOINT!, // e.g., https://<account-id>.r2.cloudflarestorage.com
-    credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-});
+const getR2Client = () => {
+    const endpoint = process.env.R2_ENDPOINT;
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+
+    if (!endpoint || !accessKeyId || !secretAccessKey) {
+        throw new Error('Missing R2 environment variables');
+    }
+
+    return new S3Client({
+        region: 'auto',
+        endpoint: endpoint,
+        credentials: {
+            accessKeyId,
+            secretAccessKey,
+        },
+        // Cloudflare R2 works best with path-style access for custom endpoints
+        forcePathStyle: true,
+    });
+};
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME || 'whisper-assets';
 const PUBLIC_URL_BASE = process.env.R2_PUBLIC_URL || ''; // e.g., https://assets.yourdomain.com
@@ -48,7 +60,8 @@ export async function POST(request: NextRequest) {
         const arrayBuffer = await file.arrayBuffer();
         const fileBytes = new Uint8Array(arrayBuffer);
 
-        // Upload to R2
+        // Initialize client and upload
+        const R2 = getR2Client();
         await R2.send(new PutObjectCommand({
             Bucket: BUCKET_NAME,
             Key: fileName,
@@ -57,7 +70,9 @@ export async function POST(request: NextRequest) {
         }));
 
         // Return public URL
-        const publicUrl = `${PUBLIC_URL_BASE}/${fileName}`;
+        // Ensure PUBLIC_URL_BASE doesn't end with a slash if fileName doesn't start with one
+        const baseUrl = PUBLIC_URL_BASE.endsWith('/') ? PUBLIC_URL_BASE.slice(0, -1) : PUBLIC_URL_BASE;
+        const publicUrl = baseUrl ? `${baseUrl}/${fileName}` : `/${fileName}`;
 
         return NextResponse.json({
             success: true,
@@ -67,7 +82,8 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         console.error('R2 upload error:', error);
-        return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }
 

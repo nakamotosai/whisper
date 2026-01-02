@@ -23,6 +23,7 @@ export interface Message {
     timestamp: number;
     type: 'text' | 'emoji' | 'voice' | 'image';
     countryCode?: string;
+    isRecalled?: boolean;
 }
 
 export interface RoomStats {
