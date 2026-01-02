@@ -448,7 +448,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                                     <div className={`relative flex flex-col ${isOwn ? 'items-end' : 'items-start'} group/bubble max-w-[85%]`}>
                                         {msg.replyTo && (
-                                            <div className={`mb-1 p-2 rounded-xl text-[10px] border shadow-sm backdrop-blur-md transition-all ${isOwn ? 'mr-1 border-white/10 bg-white/5 text-white/50' : 'ml-1 border-black/5 bg-black/5 text-black/40'}`}>
+                                            <div className={`mb-1 p-2 rounded-xl text-[10px] border shadow-sm backdrop-blur-md transition-all 
+                                                ${isOwn
+                                                    ? 'mr-1 border-white/10 bg-white/10 text-white/60'
+                                                    : `ml-1 ${theme === 'light' ? 'border-black/5 bg-black/5 text-black/40' : 'border-white/5 bg-white/5 text-white/40'}`
+                                                }`}>
                                                 <div className="font-black mb-0.5 truncate max-w-[150px]">{msg.replyTo.userName}</div>
                                                 <div className="opacity-80 line-clamp-1 truncate max-w-[150px]">{msg.replyTo.content}</div>
                                             </div>
@@ -518,6 +522,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                         if (msg.type === 'image') content = '[图片]';
                                                         setQuotedMessage({ userName: msg.userName, content });
                                                         setActiveMenuId(null);
+                                                        setInputMode('text');
+                                                        setTimeout(() => inputRef.current?.focus(), 50);
                                                     }}
                                                     className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[9px] font-black tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
                                                 >

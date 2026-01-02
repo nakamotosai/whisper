@@ -534,23 +534,19 @@ export const MapBackground = memo(({
                         <Marker position={fuzzedLocation as [number, number]} icon={selfIcon(activeConfig.hex)} zIndexOffset={1001} />
 
                         {/* Other online users markers - Hide when moving */}
-                        {!isMoving && onlineUsers && onlineUsers.map(u => {
-                            if (u.user_id === currentUserId) return null;
-                            if (typeof u.lat !== 'number' || typeof u.lng !== 'number') return null;
-                            return (
-                                <CircleMarker
-                                    key={`user-${u.user_id}`}
-                                    center={[u.lat, u.lng]}
-                                    radius={3}
-                                    pathOptions={{
-                                        fillColor: '#ffffff',
-                                        fillOpacity: 0.8,
-                                        stroke: false,
-                                        className: 'online-user-dot'
-                                    }}
-                                />
-                            );
-                        })}
+                        {!isMoving && onlineUsers && Array.from(new Map(onlineUsers.filter(u => u.user_id !== currentUserId && typeof u.lat === 'number' && typeof u.lng === 'number').map(u => [u.user_id, u])).values()).map(u => (
+                            <CircleMarker
+                                key={`user-${u.user_id}`}
+                                center={[u.lat, u.lng]}
+                                radius={3}
+                                pathOptions={{
+                                    fillColor: '#ffffff',
+                                    fillOpacity: 0.8,
+                                    stroke: false,
+                                    className: 'online-user-dot'
+                                }}
+                            />
+                        ))}
                     </>
                 )}
             </MapContainer>

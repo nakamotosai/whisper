@@ -49,6 +49,11 @@ export default function Home() {
   const [viewportHeight, setViewportHeight] = useState('100vh');
   const [reconnectCounter, setReconnectCounter] = useState(0);
 
+  // Chat Panel Resize State
+  const [chatWidth, setChatWidth] = useState(360);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizerRef = useRef<HTMLDivElement>(null);
+
   // Suggestion System
   const [showSuggestionPanel, setShowSuggestionPanel] = useState(false);
   const [suggestionText, setSuggestionText] = useState('');
@@ -227,6 +232,9 @@ export default function Home() {
     if (storedTheme) setTheme(storedTheme);
     else setTheme('dark');
 
+    const storedWidth = localStorage.getItem('whisper_chat_width');
+    if (storedWidth && !isMobile) setChatWidth(parseInt(storedWidth));
+
     return () => {
       window.removeEventListener('resize', handleResize);
       window.visualViewport?.removeEventListener('resize', handleResize);
@@ -303,6 +311,43 @@ export default function Home() {
     setForcedZoom(null);
     localStorage.setItem('whisper_last_location', JSON.stringify(loc));
   }, []);
+
+  // Resize Handlers
+  const startResizing = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  const resize = useCallback((e: MouseEvent) => {
+    if (isResizing) {
+      const newWidth = window.innerWidth - e.clientX - 24; // 24 is the right margin
+      const maxWidth = window.innerWidth / 2;
+      const minWidth = 300;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        setChatWidth(newWidth);
+        localStorage.setItem('whisper_chat_width', newWidth.toString());
+      }
+    }
+  }, [isResizing]);
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener('mousemove', resize);
+      window.addEventListener('mouseup', stopResizing);
+    } else {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    }
+    return () => {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [isResizing, resize, stopResizing]);
 
   const onTabChange = useCallback((s: ScaleLevel) => {
     setActiveScale(s);
@@ -1092,7 +1137,7 @@ export default function Home() {
         </div>
       )}
       <div
-        className={`fixed z-[1000] overflow-hidden ${isMobile ? 'transition-all duration-300 ease-out' : 'top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100 transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)]'} ${(!isMobile || isChatOpen) ? 'translate-y-0 opacity-100' : (isMobile ? 'translate-y-[120%] opacity-0' : 'translate-x-[120%] opacity-0')}`}
+        className={`fixed z-[1000] overflow-hidden ${isResizing ? 'select-none pointer-events-none' : ''} ${isMobile ? 'transition-all duration-300 ease-out' : 'top-6 right-6 bottom-6 translate-x-0 opacity-100 transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)]'} ${(!isMobile || isChatOpen) ? 'translate-y-0 opacity-100' : (isMobile ? 'translate-y-[120%] opacity-0' : 'translate-x-[120%] opacity-0')}`}
         style={isMobile ? {
           top: '0',
           left: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw',
@@ -1100,10 +1145,20 @@ export default function Home() {
           height: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? viewportHeight : `calc(${viewportHeight} - 8vw)`,
           borderRadius: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '32px',
           marginTop: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw'
-        } : {}}
+        } : {
+          width: `${chatWidth}px`
+        }}
         onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
         onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
       >
+        {!isMobile && (
+          <div
+            onMouseDown={startResizing}
+            className={`absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize z-[1001] group flex items-center justify-center transition-colors hover:bg-white/10 ${isResizing ? 'bg-white/20' : ''}`}
+          >
+            <div className={`w-0.5 h-12 rounded-full bg-white/10 group-hover:bg-white/40 transition-colors ${isResizing ? 'bg-white/60' : ''}`} />
+          </div>
+        )}
         <ChatInterface
           scale={activeScale}
           roomId={roomIds[activeScale]}
