@@ -33,6 +33,9 @@ interface ChatInterfaceProps {
     onUpdateAnyUserName?: (userId: string, newName: string) => Promise<void>;
 }
 
+const SCALE_OPTIONS_TRANS = { WORLD: '世界', CITY: '城市', DISTRICT: '地区' };
+const COMMON_EMOJIS = ['😂', '😍', '🤔', '👍', '🔥', '✨', '🎉', '❤️', '🙌', '👀', '🚀', '👋', '😭', '😎', '💀', '💯', '🌈', '🍦', '⚡️', '😀'];
+
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     scale, roomId, messages, unreadCounts, user, onSendMessage, onUploadImage, onUploadVoice, onRecallMessage,
     fetchLiveStreams, fetchSharedImages, isOpen, onToggle, onTabChange, onUpdateUser, onOpenSettings, isMobile = false, locationName, theme = 'dark', onlineCounts,
@@ -47,6 +50,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
     const [recallMenuId, setRecallMenuId] = useState<string | null>(null);
     const [gmMenuId, setGmMenuId] = useState<string | null>(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [showNewMessageTip, setShowNewMessageTip] = useState(false);
 
@@ -83,8 +87,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
         if (scrollRef.current) {
-            scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior });
+            const container = scrollRef.current;
+            // Scroll to the absolute end
+            container.scrollTo({ top: container.scrollHeight + 1000, behavior });
             setShowNewMessageTip(false);
+
+            // Double check after a frame to catch any delayed layout shifts
+            requestAnimationFrame(() => {
+                if (container) container.scrollTo({ top: container.scrollHeight + 1000, behavior });
+            });
         }
     };
 
@@ -158,23 +169,44 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     useEffect(() => {
         const handleResize = () => {
             if (activeSubTab === 'CHAT' && isOpen) {
-                scrollToBottom('smooth');
+                // Use 'auto' for immediate snap when keyboard opens
+                scrollToBottom('auto');
+                // Second call with 'smooth' and delay to catch the tail end of animations
+                setTimeout(() => scrollToBottom('smooth'), 100);
+                setTimeout(() => scrollToBottom('smooth'), 300);
             }
         };
         window.visualViewport?.addEventListener('resize', handleResize);
         return () => window.visualViewport?.removeEventListener('resize', handleResize);
     }, [activeSubTab, isOpen]);
 
+    // Watch for chat container height changes (e.g. keyboard showing)
+    useEffect(() => {
+        if (!scrollRef.current || activeSubTab !== 'CHAT') return;
+
+        const observer = new ResizeObserver(() => {
+            if (isOpen) {
+                scrollToBottom('auto');
+                // Smooth follow-up
+                setTimeout(() => scrollToBottom('smooth'), 100);
+            }
+        });
+
+        observer.observe(scrollRef.current);
+        return () => observer.disconnect();
+    }, [activeSubTab, isOpen]);
+
     useEffect(() => {
         const handleClickOutside = () => {
             setRecallMenuId(null);
             setGmMenuId(null);
+            setShowEmojiPicker(false);
         };
-        if (recallMenuId || gmMenuId) {
+        if (recallMenuId || gmMenuId || showEmojiPicker) {
             document.addEventListener('click', handleClickOutside);
             return () => document.removeEventListener('click', handleClickOutside);
         }
-    }, [recallMenuId, gmMenuId]);
+    }, [recallMenuId, gmMenuId, showEmojiPicker]);
 
     const handleScroll = async () => {
         if (!scrollRef.current) return;
@@ -601,18 +633,65 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             {
                 activeSubTab === 'CHAT' && (
                     <div className={`shrink-0 z-20 ${isMobile ? 'px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))]' : 'p-6 pt-1'}`}>
-                        <div className={`backdrop-blur-md h-9 rounded-[18px] p-1 border shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center ${theme === 'light' ? 'bg-white/60 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10'}`}>
+                        <div className={`backdrop-blur-md h-9 rounded-[18px] p-1 border shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center relative ${theme === 'light' ? 'bg-white/60 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10'}`}>
                             <button type="button" onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')} className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${inputMode === 'voice' ? 'bg-white text-black shadow-lg scale-105' : (theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black/60 hover:bg-black/10' : 'bg-white/5 text-white/50 hover:text-white/70 hover:bg-white/10')}`}>
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                                 </svg>
                             </button>
-                            <div className={`flex-1 flex items-center h-7 overflow-hidden ${inputMode === 'text' ? 'mx-2' : 'ml-2'}`}>
+
+                            {inputMode === 'text' && (
+                                <div className="relative flex items-center h-7 px-1">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
+                                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${showEmojiPicker ? 'bg-white/20' : 'hover:bg-white/5'} text-lg`}
+                                    >
+                                        😀
+                                    </button>
+
+                                    {showEmojiPicker && (
+                                        <div
+                                            className={`absolute bottom-[calc(100%+12px)] left-0 z-50 p-2.5 rounded-[24px] backdrop-blur-3xl border border-white/10 shadow-2xl grid grid-cols-5 gap-1 w-48 animate-in fade-in slide-in-from-bottom-2 duration-200 ${theme === 'light' ? 'bg-white/95' : 'bg-[#1a1a1a]/95'}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            {COMMON_EMOJIS.map(emoji => (
+                                                <button
+                                                    key={emoji}
+                                                    type="button"
+                                                    onClick={() => { setInputText(prev => prev + emoji); setShowEmojiPicker(false); inputRef.current?.focus(); }}
+                                                    className="w-8 h-8 flex items-center justify-center text-xl hover:scale-120 hover:bg-white/5 rounded-xl transition-all active:scale-90"
+                                                >
+                                                    {emoji}
+                                                </button>
+                                            ))}
+                                            <div className={`absolute bottom-[-5px] left-3 w-2.5 h-2.5 rotate-45 border-b border-r border-white/10 ${theme === 'light' ? 'bg-white/95' : 'bg-[#1a1a1a]/95'}`} />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className={`flex-1 flex items-center h-7 overflow-hidden ${inputMode === 'text' ? 'mx-1' : 'ml-2'}`}>
                                 {inputMode === 'text' ? (
                                     <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 h-full">
                                         <button type="button" onClick={() => fileInputRef.current?.click()} className={`w-6 h-6 rounded-full flex items-center justify-center transition-all shrink-0 text-lg font-light ${theme === 'light' ? 'text-black/20 hover:text-black' : 'text-white/40 hover:text-white'}`}>+</button>
                                         <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadImage(f); }} accept="image/*" className="hidden" />
-                                        <input type="text" ref={inputRef} value={inputText} onPaste={handlePaste} onChange={(e) => setInputText(e.target.value)} placeholder="..." className={`flex-1 min-w-0 bg-transparent text-base font-bold focus:outline-none ${theme === 'light' ? 'text-black placeholder:text-black/15' : 'text-white placeholder:text-white/20'}`} disabled={isSending} />
+                                        <input
+                                            type="text"
+                                            ref={inputRef}
+                                            value={inputText}
+                                            onPaste={handlePaste}
+                                            onChange={(e) => setInputText(e.target.value)}
+                                            onFocus={() => {
+                                                if (isMobile) {
+                                                    // Instant scroll on focus to catch keyboard pop-up
+                                                    setTimeout(() => scrollToBottom('smooth'), 100);
+                                                }
+                                            }}
+                                            placeholder="..."
+                                            className={`flex-1 min-w-0 bg-transparent text-base font-bold focus:outline-none ${theme === 'light' ? 'text-black placeholder:text-black/15' : 'text-white placeholder:text-white/20'}`}
+                                            disabled={isSending}
+                                        />
                                     </form>
                                 ) : (
                                     <button onPointerDown={(e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (e) { } startRecording(); }} onPointerUp={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} onPointerCancel={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} className={`flex-1 h-7 rounded-full font-bold tracking-[0.1em] text-[10px] uppercase transition-all select-none touch-none flex items-center justify-center ${isRecording ? 'bg-white text-black animate-pulse scale-[0.98]' : (theme === 'light' ? 'bg-black/5 text-black/20 hover:bg-black/10' : 'bg-white/5 text-white/40 hover:bg-white/10')}`}>

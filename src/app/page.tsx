@@ -180,14 +180,13 @@ export default function Home() {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     const handleResize = () => {
       checkMobile();
-      // Use visualViewport for accurate mobile viewport (handles keyboard)
       if (window.visualViewport) {
-        // On iOS, visualViewport.height is the visible height excluding keyboard
+        // Force the app to match the visible viewport height
         setViewportHeight(`${window.visualViewport.height}px`);
 
-        // Handle the offset created by the keyboard
-        if (window.visualViewport.offsetTop > 0) {
-          window.scrollTo(0, window.visualViewport.offsetTop);
+        // Anti-White-Screen: Force scroll to top to prevent browser from "drifting" the container up
+        if (window.scrollY !== 0) {
+          window.scrollTo(0, 0);
         }
       } else {
         setViewportHeight(`${window.innerHeight}px`);
@@ -723,7 +722,7 @@ export default function Home() {
   );
 
   return (
-    <div className="flex w-screen bg-black overflow-hidden select-none relative flex-col" style={{ height: viewportHeight }}>
+    <div className="flex w-screen bg-black overflow-hidden select-none relative flex-col" style={{ height: viewportHeight }} suppressHydrationWarning>
       {isLocatingOverlay}
       {showUnifiedSettings && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 backdrop-blur-md bg-black/40">
@@ -940,13 +939,14 @@ export default function Home() {
         </div>
       )}
       <div
-        className={`z-[1000] overflow-hidden ${isMobile ? 'absolute transition-all duration-300 ease-out' : 'fixed top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100 transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)]'} ${(!isMobile || isChatOpen) ? 'translate-y-0 opacity-100' : (isMobile ? 'translate-y-[120%] opacity-0' : 'translate-x-[120%] opacity-0')}`}
+        className={`fixed z-[1000] overflow-hidden ${isMobile ? 'transition-all duration-300 ease-out' : 'top-6 right-6 bottom-6 w-[360px] translate-x-0 opacity-100 transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)]'} ${(!isMobile || isChatOpen) ? 'translate-y-0 opacity-100' : (isMobile ? 'translate-y-[120%] opacity-0' : 'translate-x-[120%] opacity-0')}`}
         style={isMobile ? {
-          top: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw',
+          top: '0',
           left: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw',
           right: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw',
           height: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? viewportHeight : `calc(${viewportHeight} - 8vw)`,
-          borderRadius: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '32px'
+          borderRadius: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '32px',
+          marginTop: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? '0' : '4vw'
         } : {}}
         onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
         onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}

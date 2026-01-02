@@ -45,13 +45,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" style={{ background: 'black' }} suppressHydrationWarning>
       <head>
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossOrigin="" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased overscroll-none`}
-        style={{ position: 'fixed', overflow: 'hidden', width: '100%', height: '100%' }}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased overscroll-none bg-black`}
+        style={{ position: 'fixed', overflow: 'hidden', width: '100%', height: '100%', background: 'black' }}
+        suppressHydrationWarning
       >
         {children}
       </body>
