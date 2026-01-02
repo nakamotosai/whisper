@@ -250,7 +250,12 @@ export default function Home() {
     const dRoomId = getRoomId(ScaleLevel.DISTRICT, chatAnchor[0], chatAnchor[1]);
     const cRoomId = getRoomId(ScaleLevel.CITY, chatAnchor[0], chatAnchor[1]);
     const wRoomId = 'world_global';
-    setRoomIds({ [ScaleLevel.DISTRICT]: dRoomId, [ScaleLevel.CITY]: cRoomId, [ScaleLevel.WORLD]: wRoomId });
+
+    setRoomIds(prev => {
+      if (prev[ScaleLevel.DISTRICT] === dRoomId && prev[ScaleLevel.CITY] === cRoomId) return prev;
+      return { [ScaleLevel.DISTRICT]: dRoomId, [ScaleLevel.CITY]: cRoomId, [ScaleLevel.WORLD]: wRoomId };
+    });
+
     getLocationName(chatAnchor[0], chatAnchor[1], activeScale).then(setLocationName);
   }, [chatAnchor, mounted, activeScale]);
 
@@ -471,80 +476,174 @@ export default function Home() {
           return [payload.new as any, ...prev].slice(0, 50);
         });
       })
-      .subscribe();
-
     return () => { supabase?.removeChannel(channel); };
   }, [showSuggestionPanel]);
 
+  // Separate effects for each room to handle jitter and subscription independently
   useEffect(() => {
-    if (!mounted || !supabase) return;
-    Object.values(channelsRef.current).forEach(c => supabase!.removeChannel(c));
-    channelsRef.current = {};
-    const scales = [ScaleLevel.DISTRICT, ScaleLevel.CITY, ScaleLevel.WORLD];
-    scales.forEach(scale => {
-      const rid = roomIds[scale];
-      if (!rid) return;
+    if (!mounted || !supabase || !roomIds[ScaleLevel.DISTRICT]) return;
+    const rid = roomIds[ScaleLevel.DISTRICT];
+    const scale = ScaleLevel.DISTRICT;
 
-      // Load only the latest 30 messages initially
-      supabase!.from('messages')
+    const fetchLatest = async () => {
+      const { data } = await supabase!.from('messages')
         .select('*')
         .eq('room_id', rid)
         .order('timestamp', { ascending: false })
-        .limit(30)
-        .then(({ data }) => {
-          if (data) {
-            const fetched = data.map((m: any) => ({
-              id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
-              content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true'
-            })).reverse();
+        .limit(30);
 
-            setAllMessages(prev => ({ ...prev, [scale]: fetched }));
-            if (data.length < 30) {
-              setHasMore(prev => ({ ...prev, [scale]: false }));
-            } else {
-              setHasMore(prev => ({ ...prev, [scale]: true }));
-            }
-          }
+      if (data) {
+        const fetched = data.map((m: any) => ({
+          id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
+          content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
+          isGM: m.is_gm
+        })).reverse();
+
+        setAllMessages(prev => {
+          const current = prev[scale];
+          // Robust check: Only replace if it's the first load for this room, 
+          // otherwise merge to prevent wiping out optimistic messages sent during re-subscribe.
+          // For separate effects, we can simplify this to replace, as each effect is for a specific room.
+          return { ...prev, [scale]: fetched };
         });
-      // CRITICAL FIX: Channel name MUST be constant for all users in the room to share broadcasts.
-      // Do NOT include reconnectCounter in the topic.
-      const channel = supabase!.channel(`room_${rid}`).on('broadcast', { event: 'chat-message' }, ({ payload }) => {
+        setHasMore(prev => ({ ...prev, [scale]: data.length >= 30 }));
+      }
+    };
+
+    fetchLatest();
+
+    const channel = supabase!.channel(`room_${rid}`)
+      .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
         setAllMessages(prev => prev[scale].some(m => m.id === payload.id) ? prev : { ...prev, [scale]: [...prev[scale], payload] });
         if (scale !== activeScaleRef.current) setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
-      }).on('broadcast', { event: 'chat-recall' }, ({ payload }) => {
+      })
+      .on('broadcast', { event: 'chat-recall' }, ({ payload }) => {
         setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.id ? { ...m, isRecalled: true } : m) }));
-      }).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `room_id=eq.${rid}` }, (payload) => {
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `room_id=eq.${rid}` }, (payload) => {
         // Handle database updates for recall
         if (payload.new.is_recalled) {
           setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.new.id ? { ...m, isRecalled: true } : m) }));
         }
-      }).on('presence', { event: 'sync' }, () => {
+      })
+      .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState();
         const users: UserPresence[] = [];
         for (const key in newState) {
           users.push(...(newState[key] as any));
         }
         setOnlineUsers(prev => ({ ...prev, [scale]: users }));
-      }).subscribe(async (status) => {
+      })
+      .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await channel.track({
-            user_id: currentUser.id,
-            user_name: currentUser.name,
-            avatarSeed: currentUser.avatarSeed,
-            isGM: currentUser.isGM,
-            lat: userGps ? userGps[0] : location.lat,
-            lng: userGps ? userGps[1] : location.lng,
-            onlineAt: Date.now()
-          });
+          await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now() });
         }
-        // Reconnect logic handles itself via the useEffect dependency on reconnectCounter,
-        // which will teardown and recreate this subscription.
         console.log(`Channel room_${rid} status:`, status);
       });
-      channelsRef.current[rid] = channel;
-    });
-    return () => Object.values(channelsRef.current).forEach(c => supabase!.removeChannel(c));
-  }, [mounted, roomIds, currentUser, reconnectCounter]);
+
+    channelsRef.current[rid] = channel;
+    return () => { if (supabase) { supabase.removeChannel(channel); delete channelsRef.current[rid]; } };
+  }, [mounted, roomIds[ScaleLevel.DISTRICT], currentUser, reconnectCounter, userGps, location.lat, location.lng]);
+
+  useEffect(() => {
+    if (!mounted || !supabase || !roomIds[ScaleLevel.CITY]) return;
+    const rid = roomIds[ScaleLevel.CITY];
+    const scale = ScaleLevel.CITY;
+
+    const fetchLatest = async () => {
+      const { data } = await supabase!.from('messages').select('*').eq('room_id', rid).order('timestamp', { ascending: false }).limit(30);
+      if (data) {
+        const fetched = data.map((m: any) => ({
+          id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
+          content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
+          isGM: m.is_gm
+        })).reverse();
+        setAllMessages(prev => ({ ...prev, [scale]: fetched }));
+        setHasMore(prev => ({ ...prev, [scale]: data.length >= 30 }));
+      }
+    };
+    fetchLatest();
+
+    const channel = supabase!.channel(`room_${rid}`)
+      .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
+        setAllMessages(prev => prev[scale].some(m => m.id === payload.id) ? prev : { ...prev, [scale]: [...prev[scale], payload] });
+        if (scale !== activeScaleRef.current) setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+      })
+      .on('broadcast', { event: 'chat-recall' }, ({ payload }) => {
+        setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.id ? { ...m, isRecalled: true } : m) }));
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `room_id=eq.${rid}` }, (payload) => {
+        // Handle database updates for recall
+        if (payload.new.is_recalled) {
+          setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.new.id ? { ...m, isRecalled: true } : m) }));
+        }
+      })
+      .on('presence', { event: 'sync' }, () => {
+        const newState = channel.presenceState();
+        const users: UserPresence[] = [];
+        for (const key in newState) {
+          users.push(...(newState[key] as any));
+        }
+        setOnlineUsers(prev => ({ ...prev, [scale]: users }));
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now() });
+        console.log(`Channel room_${rid} status:`, status);
+      });
+
+    channelsRef.current[rid] = channel;
+    return () => { if (supabase) { supabase.removeChannel(channel); delete channelsRef.current[rid]; } };
+  }, [mounted, roomIds[ScaleLevel.CITY], currentUser, reconnectCounter, userGps, location.lat, location.lng]);
+
+  useEffect(() => {
+    if (!mounted || !supabase || !roomIds[ScaleLevel.WORLD]) return;
+    const rid = roomIds[ScaleLevel.WORLD];
+    const scale = ScaleLevel.WORLD;
+
+    const fetchLatest = async () => {
+      const { data } = await supabase!.from('messages').select('*').eq('room_id', rid).order('timestamp', { ascending: false }).limit(30);
+      if (data) {
+        const fetched = data.map((m: any) => ({
+          id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
+          content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
+          isGM: m.is_gm
+        })).reverse();
+        setAllMessages(prev => ({ ...prev, [scale]: fetched }));
+        setHasMore(prev => ({ ...prev, [scale]: data.length >= 30 }));
+      }
+    };
+    fetchLatest();
+
+    const channel = supabase!.channel(`room_${rid}`)
+      .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
+        setAllMessages(prev => prev[scale].some(m => m.id === payload.id) ? prev : { ...prev, [scale]: [...prev[scale], payload] });
+        if (scale !== activeScaleRef.current) setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+      })
+      .on('broadcast', { event: 'chat-recall' }, ({ payload }) => {
+        setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.id ? { ...m, isRecalled: true } : m) }));
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `room_id=eq.${rid}` }, (payload) => {
+        // Handle database updates for recall
+        if (payload.new.is_recalled) {
+          setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.new.id ? { ...m, isRecalled: true } : m) }));
+        }
+      })
+      .on('presence', { event: 'sync' }, () => {
+        const newState = channel.presenceState();
+        const users: UserPresence[] = [];
+        for (const key in newState) {
+          users.push(...(newState[key] as any));
+        }
+        setOnlineUsers(prev => ({ ...prev, [scale]: users }));
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now() });
+        console.log(`Channel room_${rid} status:`, status);
+      });
+
+    channelsRef.current[rid] = channel;
+    return () => { if (supabase) { supabase.removeChannel(channel); delete channelsRef.current[rid]; } };
+  }, [mounted, roomIds[ScaleLevel.WORLD], currentUser, reconnectCounter, userGps, location.lat, location.lng]);
 
   const handleSettingsSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -618,9 +717,20 @@ export default function Home() {
         is_gm: currentUser.isGM,
         country_code: currentUser.countryCode
       });
-      if (error) throw error;
+      if (error) {
+        console.error('Insert failed:', error);
+        // If it's a field missing error, notify user to run SQL
+        if (error.message?.includes('is_gm') || error.message?.includes('country_code')) {
+          alert('发送失败：数据库表结构不匹配。请在 Supabase SQL Editor 中运行 update_schema.sql 以更新表结构。');
+        } else {
+          console.warn('Database sync failed but message will broadcast via P2P.');
+        }
+      }
+      // CRITICAL: Always broadcast even if insert fails, so other users see it in real-time.
       if (channelsRef.current[rid]) await channelsRef.current[rid].send({ type: 'broadcast', event: 'chat-message', payload: msg });
-    } catch (err) { }
+    } catch (err) {
+      console.error('Send message error:', err);
+    }
   };
 
   const onRecallMessage = async (messageId: string) => {
@@ -661,9 +771,18 @@ export default function Home() {
         is_gm: currentUser.isGM,
         country_code: currentUser.countryCode
       });
-      if (dbError) throw dbError;
+      if (dbError) {
+        console.error('Insert image failed:', dbError);
+        if (dbError.message?.includes('is_gm') || dbError.message?.includes('country_code')) {
+          alert('发送失败：数据库表结构不匹配。请在 Supabase SQL Editor 中运行 update_schema.sql 以更新表结构。');
+        }
+      }
+      // CRITICAL: Always broadcast even if insert fails
       if (channelsRef.current[rid]) await channelsRef.current[rid].send({ type: 'broadcast', event: 'chat-message', payload: finalMsg });
-    } catch (err) { setAllMessages(prev => ({ ...prev, [activeScale]: prev[activeScale].filter(m => m.id !== tempId) })); }
+    } catch (err) {
+      console.error('Image upload error:', err);
+      setAllMessages(prev => ({ ...prev, [activeScale]: prev[activeScale].filter(m => m.id !== tempId) }));
+    }
   };
 
   const onUploadVoice = async (blob: Blob, duration: number) => {
@@ -696,9 +815,17 @@ export default function Home() {
         is_gm: currentUser.isGM,
         country_code: currentUser.countryCode
       });
-      if (dbError) throw dbError;
+      if (dbError) {
+        console.error('Insert voice failed:', dbError);
+        if (dbError.message?.includes('is_gm') || dbError.message?.includes('country_code')) {
+          alert('发送失败：数据库表结构不匹配。请在 Supabase SQL Editor 中运行 update_schema.sql 以更新表结构。');
+        }
+      }
+      // CRITICAL: Always broadcast even if insert fails
       if (channelsRef.current[rid]) await channelsRef.current[rid].send({ type: 'broadcast', event: 'chat-message', payload: msg });
-    } catch (err) { }
+    } catch (err) {
+      console.error('Voice upload error:', err);
+    }
   };
 
   if (!mounted) return <div className="h-screen w-screen bg-black" />;

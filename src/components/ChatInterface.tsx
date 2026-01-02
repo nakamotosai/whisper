@@ -720,8 +720,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         </div>
 
                         <div className="flex-1 relative flex items-center justify-center p-4 md:p-12 overflow-hidden pointer-events-none">
-                            <div className="relative w-full h-full flex items-center justify-center pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                                <img src={galleryItems[viewerIndex].content} className={`max-w-full max-h-full object-contain select-none ${theme === 'light' ? 'shadow-[0_0_100px_rgba(0,0,0,0.2)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.8)]'}`} alt="Viewer" />
+                            <div className="relative flex items-center justify-center">
+                                <img
+                                    src={galleryItems[viewerIndex].content}
+                                    className={`max-w-full max-h-full object-contain select-none pointer-events-auto ${theme === 'light' ? 'shadow-[0_0_100px_rgba(0,0,0,0.2)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.8)]'}`}
+                                    alt="Viewer"
+                                    onClick={(e) => e.stopPropagation()}
+                                />
                             </div>
                         </div>
 
