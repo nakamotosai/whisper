@@ -327,7 +327,7 @@ export default function Home() {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase?.removeChannel(channel); };
   }, [showSuggestionPanel]);
 
   useEffect(() => {
