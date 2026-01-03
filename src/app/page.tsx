@@ -82,7 +82,6 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false);
   const [locationName, setLocationName] = useState<string>('');
   const [theme, setTheme] = useState<ThemeType>('dark');
-  const [viewportHeight, setViewportHeight] = useState('100vh');
   const [fontSize, setFontSize] = useState(16);
   const [reconnectCounter, setReconnectCounter] = useState(0);
   const [isImmersiveMode, setIsImmersiveMode] = useState(false);
@@ -312,11 +311,6 @@ export default function Home() {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     const handleResize = () => {
       checkMobile();
-      if (window.visualViewport) {
-        setViewportHeight(`${window.visualViewport.height}px`);
-      } else {
-        setViewportHeight(`${window.innerHeight}px`);
-      }
     };
     window.addEventListener('resize', handleResize);
     // REMOVED: Aggressive scroll lock can fight with mobile keyboard scrolling
@@ -393,6 +387,37 @@ export default function Home() {
 
     getLocationName(chatAnchor[0], chatAnchor[1], activeScale).then(setLocationName);
   }, [chatAnchor, mounted, activeScale]);
+
+  // GM Identity Verification & Session Persistence
+  useEffect(() => {
+    if (!mounted || !supabase) return;
+
+    const verifyGM = async () => {
+      // If user's name is "老蔡", they MUST be the active GM in the database
+      if (currentUser.name === '老蔡') {
+        try {
+          const { data } = await supabase!.from('site_settings').select('value_text').eq('key', 'gm_active_user_id').single();
+          if (data?.value_text === currentUser.id) {
+            // Valid GM - Ensure isGM flag is active
+            if (!currentUser.isGM) {
+              setCurrentUser(prev => ({ ...prev, isGM: true }));
+            }
+          } else {
+            // IMPERSONATION DETECTED: Someone else has the name "老蔡" in localStorage
+            // or the GM session has been taken over by another device.
+            const newName = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
+            setCurrentUser(prev => ({ ...prev, name: newName, isGM: false }));
+            localStorage.setItem('whisper_user_name', newName);
+            console.warn('Unauthorized GM identity detected and reset.');
+          }
+        } catch (err) {
+          console.error('GM verification error:', err);
+        }
+      }
+    };
+
+    verifyGM();
+  }, [mounted, currentUser.id, currentUser.name, currentUser.isGM]);
 
   useEffect(() => {
     if (mounted) {

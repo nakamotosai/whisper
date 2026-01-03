@@ -279,9 +279,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         if (!isMobile) return;
         const handleResize = () => {
             if (activeSubTab === 'CHAT' && inputRef.current && document.activeElement === inputRef.current) {
+                // Only scroll the message container, don't force scrollIntoView on the input
+                // as it can cause blurs on Android Chrome.
                 setTimeout(() => {
                     scrollToBottom('auto');
-                    inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
                 }, 100);
             }
         };
@@ -601,8 +602,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     </div>
                 )}
 
-                <div className="flex items-end gap-2.5 transition-all duration-500">
-                    <div className={`flex-1 h-[48px] rounded-[24px] border transition-all duration-500 flex items-center shadow-2xl relative ${isRecording ? 'bg-red-500/10 border-red-500/30 ring-4 ring-red-500/5' : (theme === 'light' ? 'bg-white/70 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10')}`}>
+                <div className={`flex items-end gap-2.5 ${isMobile ? '' : 'transition-all duration-500'}`}>
+                    <div className={`flex-1 h-[48px] rounded-[24px] border flex items-center shadow-2xl relative ${isMobile ? '' : 'transition-all duration-500'} ${isRecording ? 'bg-red-500/10 border-red-500/30 ring-4 ring-red-500/5' : (theme === 'light' ? 'bg-white/70 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10')}`}>
                         {inputMode === 'text' ? (
                             <div className="flex-1 flex items-center gap-0 h-full pl-2 pr-4">
                                 <button type="button" onClick={() => fileInputRef.current?.click()} className={`w-8 h-8 rounded-full flex items-center justify-center transition-all shrink-0 ${theme === 'light' ? 'text-black/20 hover:text-black' : 'text-white/40 hover:text-white'}`}>
@@ -615,6 +616,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                 <form onSubmit={handleSend} className="flex-1 h-full flex items-center relative">
                                     <input
                                         type="text"
+                                        inputMode="text"
                                         ref={inputRef}
                                         value={inputText}
                                         onPaste={handlePaste}
