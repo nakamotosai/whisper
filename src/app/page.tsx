@@ -867,7 +867,7 @@ export default function Home() {
         setOnlineUsers(prev => ({ ...prev, [scale]: users }));
       })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
+        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false, lastReadTimestamp: 0 });
         console.log(`Channel room_${rid} status:`, status);
       });
 
@@ -989,6 +989,29 @@ export default function Home() {
       lng: userGps ? userGps[1] : location.lng,
       onlineAt: Date.now(),
       isTyping
+    });
+  }, [activeScale, roomIds, userGps, location]);
+
+  const onRead = useCallback(async (timestamp: number) => {
+    const rid = roomIds[activeScale];
+    if (!supabase || !rid || !channelsRef.current[rid]) return;
+
+    // Throttle: avoid spamming presence updates too often (e.g., max once per 3s)
+    const now = Date.now();
+    const lastUpdate = (window as any)._lastReadUpdate || 0;
+    if (now - lastUpdate < 3000) return;
+    (window as any)._lastReadUpdate = now;
+
+    await channelsRef.current[rid].track({
+      user_id: currentUserRef.current.id,
+      user_name: currentUserRef.current.name,
+      avatarSeed: currentUserRef.current.avatarSeed,
+      isGM: currentUserRef.current.isGM,
+      lat: userGps ? userGps[0] : location.lat,
+      lng: userGps ? userGps[1] : location.lng,
+      onlineAt: Date.now(), // Update online status too
+      isTyping: false,
+      lastReadTimestamp: timestamp
     });
   }, [activeScale, roomIds, userGps, location]);
 
@@ -1447,6 +1470,9 @@ export default function Home() {
           hasMore={hasMore[activeScale]}
           onDeleteMessage={handleDeleteMessage}
           onUpdateAnyUserName={handleUpdateAnyUserName}
+          onRead={onRead}
+          onlineUsers={onlineUsers[activeScale]}
+          currentUserId={currentUser.id}
         />
         <PWAInstaller theme={theme} />
       </div>

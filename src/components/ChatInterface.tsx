@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType } from '@/types';
+import { ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType, UserPresence } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { getCountryNameCN } from '@/lib/spatialService';
@@ -46,6 +46,9 @@ interface ChatInterfaceProps {
     mentionCounts?: Record<ScaleLevel, number>;
     onTyping?: (isTyping: boolean) => void;
     typingUsers?: string[];
+    onRead?: (timestamp: number) => void;
+    onlineUsers?: UserPresence[];
+    currentUserId?: string;
 }
 
 const SCALE_OPTIONS_TRANS = { WORLD: '世界', CITY: '城市', DISTRICT: '地区' };
@@ -56,8 +59,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     fetchLiveStreams, fetchSharedImages, isOpen, onToggle, onTabChange, onUpdateUser, onOpenSettings, isMobile = false, locationName, theme = 'dark', onlineCounts,
     onLoadMore, hasMore = false, onDeleteMessage, onUpdateAnyUserName, fontSize = 16,
     mentionCounts = { [ScaleLevel.DISTRICT]: 0, [ScaleLevel.CITY]: 0, [ScaleLevel.WORLD]: 0 },
-    onTyping, typingUsers = []
+    onTyping, typingUsers = [], onRead, onlineUsers = [], currentUserId
 }) => {
+    // Cumulative read status map: userId -> maxReadTimestamp
+    const [readStatusMap, setReadStatusMap] = useState<Record<string, number>>({});
+
+    // Reset cumulative map when switching channels/scales
+    useEffect(() => {
+        setReadStatusMap({});
+    }, [scale]);
+
+    // Update cumulative map based on incoming onlineUsers
+    useEffect(() => {
+        if (!onlineUsers.length) return;
+        setReadStatusMap(prev => {
+            const next = { ...prev };
+            let changed = false;
+            onlineUsers.forEach(u => {
+                if (u.lastReadTimestamp && u.lastReadTimestamp > (next[u.user_id] || 0)) {
+                    next[u.user_id] = u.lastReadTimestamp;
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [onlineUsers]);
+
     const [inputText, setInputText] = useState('');
     const [isSending, setIsSending] = useState(false);
     const [activeSubTab, setActiveSubTab] = useState<SubTabType>('CHAT');
@@ -258,6 +285,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         // Latest messages (visual bottom) are at scrollTop 0
         if (absScrollTop < 200) {
             setShowNewMessageTip(false);
+            if (activeSubTab === 'CHAT' && onRead) {
+                onRead(Date.now());
+            }
         }
 
         // History messages (visual top) are at the "end" of the scroll range
@@ -268,7 +298,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             }
             setIsLoadingMore(false);
         }
-    }, [hasMore, isLoadingMore, activeSubTab, onLoadMore, scale]);
+    }, [hasMore, isLoadingMore, activeSubTab, onLoadMore, scale, onRead]);
 
     const startRecording = async () => {
         if (isRecording) return;
@@ -501,6 +531,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             const index = messages.length - 1 - reversedIndex;
                             const prevMsg = index > 0 ? messages[index - 1] : null;
                             const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
+                            // Calculate read count using the cumulative map
+                            const readCount = Object.entries(readStatusMap).filter(([uid, readTs]) =>
+                                readTs >= msg.timestamp &&
+                                uid !== msg.userId &&
+                                uid !== currentUserId
+                            ).length;
 
                             return (
                                 <MessageItem
@@ -523,6 +559,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                     onPlayVoice={playVoice}
                                     onViewImage={openViewer}
                                     onAddMention={handleAddMention}
+                                    readCount={readCount}
                                 />
                             );
                         })}

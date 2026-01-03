@@ -90,4 +90,5 @@ export interface UserPresence {
     onlineAt: number;
     isGM?: boolean;
     isTyping?: boolean;
+    lastReadTimestamp?: number;
 }
