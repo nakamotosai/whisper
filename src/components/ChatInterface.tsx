@@ -490,8 +490,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 ref={scrollRef}
                 onScroll={handleScroll}
                 style={{
-                    maskImage: 'linear-gradient(to top, transparent, rgba(0,0,0,0) 2px, rgba(0,0,0,0.1) 6px, rgba(0,0,0,0.4) 12px, black 24px)',
-                    WebkitMaskImage: 'linear-gradient(to top, transparent, rgba(0,0,0,0) 2px, rgba(0,0,0,0.1) 6px, rgba(0,0,0,0.4) 12px, black 24px)',
                     WebkitOverflowScrolling: 'touch',
                     overflowAnchor: 'auto'
                 }}
@@ -577,8 +575,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             )}
 
             {activeSubTab === 'CHAT' && (
-                <div className={`shrink-0 z-20 ${isMobile ? 'px-3 pt-2 pb-3' : 'p-6 pt-1'}`}>
-                    <div className="h-6 mb-1 px-4 flex items-center gap-2 overflow-hidden">
+                <div className={`shrink-0 z-20 ${isMobile ? 'px-3 pt-1 pb-3' : 'p-6 pt-0'}`}>
+                    <div className="h-4 px-4 flex items-center gap-2 overflow-hidden">
                         {typingUsers.length > 0 && (
                             <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-1 duration-500">
                                 <div className="flex gap-1 items-center py-1">
