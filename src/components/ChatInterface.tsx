@@ -622,7 +622,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         onPaste={handlePaste}
                                         onChange={(e) => setInputText(e.target.value)}
                                         placeholder={isSending ? "正在传输..." : "发送消息..."}
-                                        className={`w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 p-0 text-[14px] font-normal ${theme === 'light' ? 'text-gray-900 placeholder:text-black/30' : 'text-white placeholder:text-white/20'}`}
+                                        className={`w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 p-0 pr-8 text-[14px] font-normal ${theme === 'light' ? 'text-gray-900 placeholder:text-black/30' : 'text-white placeholder:text-white/20'}`}
                                         disabled={isSending}
                                     />
                                     {inputText.length > 0 && !isSending && (
