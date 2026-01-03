@@ -24,7 +24,7 @@ interface ChatInterfaceProps {
     unreadCounts: Record<ScaleLevel, number>;
     user: User;
     onSendMessage: (content: string, replyTo?: Message['replyTo']) => Promise<void>;
-    onUploadImage: (file: File, replyTo?: Message['replyTo']) => Promise<void>;
+    onUploadImages: (files: File[], replyTo?: Message['replyTo']) => Promise<void>;
     onUploadVoice: (blob: Blob, duration: number, replyTo?: Message['replyTo']) => Promise<void>;
     onRecallMessage: (messageId: string) => Promise<void>;
     fetchLiveStreams: (roomId: string) => Promise<LiveStream[]>;
@@ -56,7 +56,7 @@ const SCALE_OPTIONS_TRANS = { WORLD: '世界', CITY: '城市', DISTRICT: '地区
 const COMMON_EMOJIS = ['😂', '😍', '🤔', '👍', '🔥', '✨', '🎉', '❤️', '🙌', '👀', '🚀', '👋', '😭', '😎', '💀', '💯', '🌈', '🍦', '⚡️', '😀'];
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
-    scale, roomId, messages, unreadCounts, user, onSendMessage, onUploadImage, onUploadVoice, onRecallMessage,
+    scale, roomId, messages, unreadCounts, user, onSendMessage, onUploadImages, onUploadVoice, onRecallMessage,
     fetchLiveStreams, fetchSharedImages, isOpen, onToggle, onTabChange, onUpdateUser, onOpenSettings, isMobile = false, locationName, theme = 'dark', onlineCounts,
     onLoadMore, hasMore = false, onDeleteMessage, onUpdateAnyUserName, fontSize = 16,
     mentionCounts = { [ScaleLevel.DISTRICT]: 0, [ScaleLevel.CITY]: 0, [ScaleLevel.WORLD]: 0 },
@@ -70,7 +70,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         setReadStatusMap({});
     }, [scale]);
 
-    // Update cumulative map based on incoming onlineUsers
+    // Update cumulative map based on onlineUsers
     useEffect(() => {
         if (!onlineUsers.length) return;
         setReadStatusMap(prev => {
@@ -84,7 +84,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             });
             return changed ? next : prev;
         });
-    }, [onlineUsers]);
+    }, [onlineUsers, scale]);
 
     const [inputText, setInputText] = useState('');
     const [isSending, setIsSending] = useState(false);
@@ -98,12 +98,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [showNewMessageTip, setShowNewMessageTip] = useState(false);
+    const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
+
+    useEffect(() => {
+        const saved = localStorage.getItem('whisper_recent_emojis');
+        if (saved) {
+            try {
+                setRecentEmojis(JSON.parse(saved));
+            } catch (e) { }
+        }
+    }, []);
+
+    const handleEmojiClick = (emoji: string) => {
+        setInputText(prev => prev + emoji);
+        inputRef.current?.focus();
+
+        setRecentEmojis(prev => {
+            const next = [emoji, ...prev.filter(e => e !== emoji)].slice(0, 5);
+            localStorage.setItem('whisper_recent_emojis', JSON.stringify(next));
+            return next;
+        });
+    };
 
     const [viewerIndex, setViewerIndex] = useState<number | null>(null);
     const [galleryImages, setGalleryImages] = useState<SharedImage[]>([]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
-
     const fileInputRef = useRef<HTMLInputElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -113,17 +133,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const recordingStartTimeRef = useRef<number>(0);
     const audioObjRef = useRef<HTMLAudioElement | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
-    const lastScrollHeight = useRef<number>(0);
     const isAutoScrolling = useRef<boolean>(false);
     const lastMessageId = useRef<string | null>(null);
     const lastRoomId = useRef<string | null>(null);
     const lastSubTab = useRef<SubTabType>('CHAT');
 
-
-
     const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
         if (scrollRef.current) {
-            // In flex-col-reverse, scrollTop = 0 is the bottom
             scrollRef.current.scrollTo({ top: 0, behavior });
             setShowNewMessageTip(false);
         }
@@ -142,31 +158,45 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     useEffect(() => {
         const chatImages = messages
-            .filter(m => m.type === 'image' || m.content.includes('chat_images'))
-            .map(m => ({
-                id: m.id,
-                url: m.content,
-                caption: '',
-                author: m.userName,
-                likes: 0,
-                lat: 0,
-                lng: 0,
-                timestamp: m.timestamp
-            }));
+            .filter(m => !m.isRecalled)
+            .flatMap(m => {
+                if (m.type === 'image' || m.content.includes('chat_images')) {
+                    const urls = m.content.split(',');
+                    return urls.map((url, idx) => ({
+                        id: urls.length > 1 ? `${m.id}_${idx}` : m.id,
+                        url: url,
+                        caption: '',
+                        author: m.userName,
+                        likes: 0,
+                        lat: 0,
+                        lng: 0,
+                        timestamp: m.timestamp
+                    }));
+                }
+                return [];
+            });
 
         setGalleryImages(prev => {
-            const existingIds = new Set(prev.map(img => img.id));
+            // 1. Identify all messages that are currently marked as recalled
+            const recalledIds = new Set(messages.filter(m => m.isRecalled).map(m => m.id));
+
+            // 2. Filter out any images whose source message ID matches a recalled one
+            const filteredPrev = prev.filter(img => {
+                const baseId = img.id.split('_')[0];
+                return !recalledIds.has(baseId);
+            });
+
+            // 3. Add only new images that aren't already in the gallery
+            const existingIds = new Set(filteredPrev.map(img => img.id));
             const newImages = chatImages.filter(img => !existingIds.has(img.id));
-            if (newImages.length === 0) return prev;
-            // 将新消息图片加到前面
-            return [...newImages.reverse(), ...prev];
+
+            if (newImages.length === 0 && filteredPrev.length === prev.length) return prev;
+            return [...newImages.reverse(), ...filteredPrev];
         });
     }, [messages]);
 
     useEffect(() => {
         if (activeSubTab === 'CHAT' && scrollRef.current && isOpen) {
-            const container = scrollRef.current;
-
             const currentLastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
             const currentLastId = currentLastMsg?.id || null;
 
@@ -177,9 +207,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 lastMessageId.current = null;
                 lastRoomId.current = roomId;
                 lastSubTab.current = activeSubTab;
-                requestAnimationFrame(() => {
-                    scrollToBottom('auto');
-                });
+                requestAnimationFrame(() => scrollToBottom('auto'));
                 return;
             }
 
@@ -187,9 +215,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             const hasNewerMessage = currentLastId !== null && currentLastId !== lastMessageId.current;
 
             if (isInitialLoad) {
-                requestAnimationFrame(() => {
-                    scrollToBottom('auto');
-                });
+                requestAnimationFrame(() => scrollToBottom('auto'));
             } else if (hasNewerMessage) {
                 const container = scrollRef.current;
                 const isNearBottom = container ? Math.abs(container.scrollTop) < 250 : true;
@@ -202,15 +228,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     setShowNewMessageTip(true);
                 }
             }
-
-            // Scroll anchoring is now handled natively by column-reverse
             lastMessageId.current = currentLastId;
-            lastSubTab.current = activeSubTab;
             lastSubTab.current = activeSubTab;
         } else {
             lastSubTab.current = activeSubTab;
         }
-    }, [messages.length, messages[messages.length - 1]?.id, isOpen, activeSubTab, scale, roomId]);
+    }, [messages.length, messages[messages.length - 1]?.id, isOpen, activeSubTab, scale, roomId, user.id]);
 
     useEffect(() => {
         const handleClickOutside = () => {
@@ -242,7 +265,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         }
     }, [inputText, isOpen, onTyping]);
 
-    // 当有人正在输入时，如果用户在底部，自动调整滚动平衡
     useEffect(() => {
         if (activeSubTab === 'CHAT' && typingUsers.length > 0 && scrollRef.current) {
             const container = scrollRef.current;
@@ -253,24 +275,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         }
     }, [typingUsers.length, activeSubTab]);
 
-    // Handle mobile keyboard resize
     useEffect(() => {
         if (!isMobile) return;
-
         const handleResize = () => {
             if (activeSubTab === 'CHAT' && inputRef.current && document.activeElement === inputRef.current) {
                 setTimeout(() => {
                     scrollToBottom('auto');
-                    // Ensure the input field itself is in view (for some browsers that might scroll it off)
                     inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
                 }, 100);
             }
         };
-
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', handleResize);
         }
-
         return () => {
             if (window.visualViewport) {
                 window.visualViewport.removeEventListener('resize', handleResize);
@@ -283,7 +300,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
         const absScrollTop = Math.abs(scrollTop);
 
-        // Latest messages (visual bottom) are at scrollTop 0
         if (absScrollTop < 200) {
             setShowNewMessageTip(false);
             if (activeSubTab === 'CHAT' && onRead) {
@@ -291,7 +307,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             }
         }
 
-        // History messages (visual top) are at the "end" of the scroll range
         if (absScrollTop + clientHeight > scrollHeight - 100 && hasMore && !isLoadingMore && activeSubTab === 'CHAT') {
             setIsLoadingMore(true);
             if (onLoadMore) {
@@ -363,14 +378,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
 
     const handlePaste = async (e: React.ClipboardEvent) => {
-        const items = e.clipboardData.items;
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image') !== -1) {
-                const file = items[i].getAsFile();
-                if (file) {
-                    onUploadImage(file);
-                    e.preventDefault();
-                }
+        const files = e.clipboardData.files;
+        if (files.length > 0) {
+            const photos = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, 9);
+            if (photos.length > 0) {
+                onUploadImages(photos);
+                e.preventDefault();
             }
         }
     };
@@ -394,28 +407,25 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         if (idx !== -1) {
             setViewerIndex(idx);
         } else {
-            // 如果不在 galleryImages 中，尝试从当前消息中构建一个临时的
-            const msg = messages.find(m => m.content === url);
+            const msg = messages.find(m => m.content.includes(url));
             if (msg) {
-                const newImg: SharedImage = {
-                    id: msg.id,
-                    url: msg.content,
+                const urls = msg.content.split(',');
+                const newImgs: SharedImage[] = urls.map((u, i) => ({
+                    id: `${msg.id}_${i}`,
+                    url: u,
                     caption: '',
                     author: msg.userName,
                     likes: 0,
                     lat: 0,
                     lng: 0,
                     timestamp: msg.timestamp
-                };
-                setGalleryImages(prev => [newImg, ...prev]);
+                }));
+                setGalleryImages(prev => [...newImgs, ...prev]);
                 setViewerIndex(0);
             }
         }
     }, [galleryImages, messages]);
 
-
-
-    // Handlers for MessageItem to prevent re-renders
     const handleSetActiveMenu = useCallback((id: string) => setActiveMenuId(id), []);
     const handleUnsetActiveMenu = useCallback(() => setActiveMenuId(null), []);
 
@@ -439,8 +449,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         if (onDeleteMessage) onDeleteMessage(id);
     }, [onDeleteMessage]);
 
-    const handleUpdateNameWrapper = useCallback((id: string, name: string) => {
-        if (onUpdateAnyUserName) onUpdateAnyUserName(id, name);
+    const handleUpdateNameWrapper = useCallback((userId: string, name: string) => {
+        if (onUpdateAnyUserName) onUpdateAnyUserName(userId, name);
     }, [onUpdateAnyUserName]);
 
     const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
@@ -452,11 +462,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
             onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
         >
-            <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden text-clip">
-                <div className={`absolute inset-0 transition-colors duration-700 ${theme === 'light' ? 'bg-white/20' : 'bg-black/10'}`} />
-            </div>
-
-            <div className={`shrink-0 z-30 transition-all duration-500 ${isMobile ? 'p-4 pt-3' : 'p-6 pt-1'} flex flex-col gap-2`}>
+            <div className={`shrink-0 z-30 transition-all duration-500 ${isMobile ? 'p-3 pt-2 pb-1' : 'px-6 pt-3 pb-2'} flex flex-col gap-1.5`}>
                 <div className="flex items-center justify-between">
                     <div className={`flex-1 flex items-center backdrop-blur-md p-1 h-9 rounded-[18px] border transition-colors ${theme === 'light' ? 'bg-white/40 border-black/5' : 'bg-[#1a1a1a]/50 border-white/5'}`}>
                         {[{ label: '世界', value: ScaleLevel.WORLD }, { label: '城市', value: ScaleLevel.CITY }, { label: '地区', value: ScaleLevel.DISTRICT }].map(tab => {
@@ -465,12 +471,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             return (
                                 <button key={tab.value} onClick={() => onTabChange(tab.value)}
                                     className={`flex-1 h-7 rounded-[14px] text-[12px] font-normal tracking-tight transition-all duration-500 uppercase flex items-center justify-center relative
-                                        ${isActive ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/40 hover:text-white/60')}`}>
+                                            ${isActive ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/40 hover:text-white/60')}`}>
                                     <span className="relative z-20">{tab.label}</span>
                                     {((mentionCounts[tab.value] || 0) > 0) && !isActive ? (
-                                        <div className="absolute -top-0.5 -right-0.5 min-w-[12px] h-3 px-0.5 rounded-full bg-red-500 border border-white/20 flex items-center justify-center text-[8px] text-white font-bold animate-pulse z-30">
-                                            @
-                                        </div>
+                                        <div className="absolute -top-0.5 -right-0.5 min-w-[12px] h-3 px-0.5 rounded-full bg-red-500 border border-white/20 flex items-center justify-center text-[8px] text-white font-bold animate-pulse z-30">@</div>
                                     ) : (hasUnread && !isActive && (
                                         <div className="absolute top-1 right-2 w-1 h-1 rounded-full bg-red-400 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
                                     ))}
@@ -490,287 +494,225 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         {['CHAT', 'IMAGES'].map(tab => (
                             <button key={tab} onClick={() => setActiveSubTab(tab as SubTabType)}
                                 className={`flex-1 h-7 rounded-[14px] text-[12px] font-normal tracking-tight transition-all duration-500 uppercase flex items-center justify-center relative
-                                    ${activeSubTab === tab ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/40 hover:text-white/60')}`}>
+                                        ${activeSubTab === tab ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/40 hover:text-white/60')}`}>
                                 <span className="relative z-20">{tab === 'CHAT' ? '动态' : '照片'}</span>
                             </button>
                         ))}
                     </div>
-                    <button
-                        onClick={onOpenSettings}
-                        className={`w-9 h-9 rounded-full flex items-center justify-center transition-all border shrink-0 ${theme === 'light' ? 'text-black/20 hover:text-black/60 hover:bg-black/5 border-black/5 bg-white/40' : 'text-white/35 hover:text-white/70 hover:bg-white/5 border-white/5 bg-white/5'}`}
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
+                    <button onClick={onOpenSettings} className={`w-9 h-9 rounded-full flex items-center justify-center transition-all border shrink-0 ${theme === 'light' ? 'text-black/20 hover:text-black/60 hover:bg-black/5 border-black/5 bg-white/40' : 'text-white/35 hover:text-white/70 hover:bg-white/5 border-white/5 bg-white/5'}`}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                     </button>
                 </div>
 
-                <div className="flex items-center gap-2 group cursor-default px-1 h-3">
+                <div className="flex items-center gap-2 group cursor-default px-1 h-4 self-start scale-95 origin-left">
                     <div className="w-1 h-1 rounded-full bg-[#818cf8] shadow-[0_0_8px_#818cf8]" />
-                    <span className={`text-[9px] uppercase font-normal tracking-[0.2em] transition-colors ${theme === 'light' ? 'text-black/40 group-hover:text-black/60' : 'text-white/50 group-hover:text-white/70'}`}>{locationName || 'BROADCAST_READY'}</span>
+                    <span className={`text-[10px] font-normal tracking-wider transition-colors ${theme === 'light' ? 'text-black/40 group-hover:text-black/60' : 'text-white/50 group-hover:text-white/70'}`}>{locationName || 'BROADCAST_READY'}</span>
                     {onlineCounts && onlineCounts[scale] > 0 && (
-                        <div className="flex items-center gap-2 ml-4">
+                        <div className="flex items-center gap-2 ml-3">
                             <div className="w-1 h-1 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]" />
-                            <span className={`text-[11px] font-bold tracking-wider ${theme === 'light' ? 'text-black/30' : 'text-white/30'}`}>当前在线人数：<span className="text-green-400">{onlineCounts[scale]}</span></span>
+                            <span className={`text-[10px] font-normal tracking-wider ${theme === 'light' ? 'text-black/40' : 'text-white/50'}`}>当前在线人数：<span className="text-green-400 font-medium">{onlineCounts[scale]}</span></span>
                         </div>
                     )}
                 </div>
             </div>
 
-            <div
-                className="flex-1 min-h-0 overflow-y-auto px-2 py-2 scrollbar-hide relative overscroll-contain touch-pan-y flex flex-col-reverse"
-                ref={scrollRef}
-                onScroll={handleScroll}
-                style={{
-                    WebkitOverflowScrolling: 'touch',
-                    overflowAnchor: 'auto'
-                }}
-            >
+            <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2 scrollbar-hide relative overscroll-contain touch-pan-y flex flex-col-reverse" ref={scrollRef} onScroll={handleScroll} style={{ WebkitOverflowScrolling: 'touch', overflowAnchor: 'auto' }}>
                 {activeSubTab === 'CHAT' && (
                     <div className="flex flex-col-reverse relative">
-                        {/* Newest messages at the bottom visually (start of flex-col-reverse list) */}
                         {reversedMessages.map((msg, reversedIndex) => {
                             const index = messages.length - 1 - reversedIndex;
                             const prevMsg = index > 0 ? messages[index - 1] : null;
                             const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
-                            // Calculate read count using the cumulative map
-                            const readCount = Object.entries(readStatusMap).filter(([uid, readTs]) =>
-                                readTs >= msg.timestamp &&
-                                uid !== msg.userId &&
-                                uid !== currentUserId
-                            ).length;
-
+                            const readCount = Object.entries(readStatusMap).filter(([uid, readTs]) => readTs >= msg.timestamp && uid !== msg.userId && uid !== currentUserId).length;
                             return (
-                                <MessageItem
-                                    key={msg.id}
-                                    msg={msg}
-                                    prevMsg={prevMsg}
-                                    nextMsg={nextMsg}
-                                    user={user}
-                                    theme={theme}
-                                    isActiveMenu={activeMenuId === msg.id}
-                                    playingAudioUrl={playingAudioUrl}
-                                    fontSize={fontSize}
-                                    index={index}
-                                    onSetActiveMenu={handleSetActiveMenu}
-                                    onUnsetActiveMenu={handleUnsetActiveMenu}
-                                    onRecall={onRecallMessage}
-                                    onDelete={handleDeleteMessageWrapper}
-                                    onUpdateName={handleUpdateNameWrapper}
-                                    onQuote={handleQuote}
-                                    onPlayVoice={playVoice}
-                                    onViewImage={openViewer}
-                                    onAddMention={handleAddMention}
-                                    readCount={readCount}
-                                />
+                                <MessageItem key={msg.id} msg={msg} prevMsg={prevMsg} nextMsg={nextMsg} user={user} theme={theme} isActiveMenu={activeMenuId === msg.id} playingAudioUrl={playingAudioUrl} fontSize={fontSize} index={index} onSetActiveMenu={handleSetActiveMenu} onUnsetActiveMenu={handleUnsetActiveMenu} onRecall={onRecallMessage} onDelete={handleDeleteMessageWrapper} onUpdateName={handleUpdateNameWrapper} onQuote={handleQuote} onPlayVoice={playVoice} onViewImage={openViewer} onAddMention={handleAddMention} readCount={readCount} />
                             );
                         })}
-
-                        {/* Loading indicator at the TOP visually (end of flex-col-reverse list) */}
                         {hasMore && (
                             <div className="flex justify-center py-4 order-last">
-                                {isLoadingMore ? (
-                                    <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-                                ) : (
-                                    <span className="text-[12px] font-normal text-white/20 uppercase tracking-tight">
-                                        继续滑动加载更多历史消息
-                                    </span>
-                                )}
+                                {isLoadingMore ? <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" /> : <span className="text-[12px] font-normal text-white/20 uppercase tracking-tight">继续滑动加载更多历史消息</span>}
                             </div>
                         )}
                         {!hasMore && messages.length > 0 && (
                             <div className="flex justify-center py-4 order-last">
-                                <span className="text-[12px] font-normal text-white/10 uppercase tracking-tight">
-                                    没有更多历史消息了
-                                </span>
+                                <span className="text-[12px] font-normal text-white/10 uppercase tracking-tight">没有更多历史消息了</span>
                             </div>
                         )}
                     </div>
                 )}
-
                 {activeSubTab === 'IMAGES' && (
                     <div className="grid grid-cols-3 gap-2 pb-8 animate-in fade-in duration-700">
-                        {galleryImages.map((msg, i) => (
-                            <img key={msg.id} src={msg.url} loading="lazy" onClick={() => setViewerIndex(i)} className="w-full aspect-square object-cover rounded-[16px] cursor-zoom-in border border-white/5 hover:border-white/20 hover:scale-[1.02] transition-all duration-500 shadow-xl" alt="Gallery" />
+                        {galleryImages.map((img, i) => (
+                            <div key={img.id} onClick={() => { setViewerIndex(i); }} className="aspect-square rounded-2xl overflow-hidden cursor-zoom-in group relative shadow-md">
+                                <img src={img.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={`Shared Photo by ${img.author}`} loading="lazy" />
+                                <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span className="text-[9px] text-white/80 truncate block">{img.author}</span>
+                                </div>
+                            </div>
                         ))}
                     </div>
                 )}
-                <div className={`${isMobile ? 'h-24' : 'h-32'} shrink-0 pointer-events-none`} />
             </div>
 
-            {showNewMessageTip && activeSubTab === 'CHAT' && (
-                <div className="absolute bottom-16 left-0 right-0 z-[60] flex justify-center pointer-events-none animate-in slide-in-from-bottom-4 fade-in duration-300">
-                    <button
-                        onClick={() => scrollToBottom('smooth')}
-                        className={`pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-2xl border shadow-[0_10px_30px_rgba(0,0,0,0.3)] transition-all active:scale-95 ${theme === 'light' ? 'bg-white/90 border-black/5 text-black' : 'bg-black/80 border-white/10 text-white'}`}
-                    >
-                        <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
-                        <span className="text-[11px] font-normal tracking-tight uppercase">有新信息</span>
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7-7-7" />
-                        </svg>
-                    </button>
-                </div>
-            )}
-
-            {activeSubTab === 'CHAT' && (
-                <div className={`shrink-0 z-20 ${isMobile ? 'px-3 pt-1 pb-3' : 'p-6 pt-0'}`}>
-                    <div className="h-4 px-4 flex items-center gap-2 overflow-hidden">
-                        {typingUsers.length > 0 && (
-                            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-1 duration-500">
-                                <div className="flex gap-1 items-center py-1">
-                                    {[1, 2, 3].map(i => (
-                                        <div key={i} className={`w-1 h-1 rounded-full ${theme === 'light' ? 'bg-black/20' : 'bg-white/40'} animate-pulse`} style={{ animationDelay: `${i * 0.2}s` }} />
+            <div className={`shrink-0 z-30 transition-all duration-500 ${isMobile ? 'p-3 pb-safe' : 'px-6 pt-2 pb-3'}`}>
+                {showEmojiPicker && (
+                    <div className={`mb-3 p-3 rounded-[24px] border backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-300 shadow-2xl relative z-40 ${theme === 'light' ? 'bg-white/90 border-black/5' : 'bg-[#1a1a1a]/90 border-white/10'}`}>
+                        {recentEmojis.length > 0 && (
+                            <div className="mb-3 pb-2 border-b border-white/5">
+                                <div className={`px-2 mb-2 text-[9px] uppercase tracking-[0.2em] font-bold ${theme === 'light' ? 'text-black/30' : 'text-white/20'}`}>最近使用</div>
+                                <div className="grid grid-cols-5 gap-2">
+                                    {recentEmojis.map(emoji => (
+                                        <button
+                                            key={`recent-${emoji}`}
+                                            onClick={() => handleEmojiClick(emoji)}
+                                            className={`w-10 h-10 flex items-center justify-center text-xl rounded-xl transition-all hover:scale-125 active:scale-90 ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/5'}`}
+                                        >
+                                            {emoji}
+                                        </button>
                                     ))}
                                 </div>
-                                <span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/30' : 'text-white/30'}`}>
-                                    {typingUsers.length === 1 ? `${typingUsers[0]} 正在输入...` : '多人正在输入...'}
-                                </span>
                             </div>
+                        )}
+                        <div className={`px-2 mb-2 text-[9px] uppercase tracking-[0.2em] font-bold ${theme === 'light' ? 'text-black/30' : 'text-white/20'}`}>所有表情</div>
+                        <div className="grid grid-cols-5 gap-2 max-h-[160px] overflow-y-auto pr-1 scrollbar-hide">
+                            {COMMON_EMOJIS.map(emoji => (
+                                <button
+                                    key={emoji}
+                                    onClick={() => handleEmojiClick(emoji)}
+                                    className={`w-10 h-10 flex items-center justify-center text-xl rounded-xl transition-all hover:scale-125 active:scale-90 ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/5'}`}
+                                >
+                                    {emoji}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {quotedMessage && (
+                    <div className={`mb-2 p-2 rounded-2xl flex items-center justify-between border backdrop-blur-3xl animate-in slide-in-from-bottom-2 duration-300 ${theme === 'light' ? 'bg-white/60 border-black/5 text-gray-800' : 'bg-[#1a1a1a]/60 border-white/10 text-white/80'}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-1 h-4 rounded-full bg-blue-500/50" />
+                            <div className="min-w-0">
+                                <span className="text-[10px] font-medium opacity-50 block uppercase tracking-wider">{quotedMessage.userName}</span>
+                                <span className="text-[12px] line-clamp-1 opacity-90 truncate">{quotedMessage.content}</span>
+                            </div>
+                        </div>
+                        <button onClick={() => setQuotedMessage(null)} className="p-1 px-2 opacity-40 hover:opacity-100 transition-opacity"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                    </div>
+                )}
+
+                <div className="flex items-end gap-2.5 transition-all duration-500">
+                    <div className={`flex-1 h-[48px] rounded-[24px] border transition-all duration-500 flex items-center shadow-2xl relative ${isRecording ? 'bg-red-500/10 border-red-500/30 ring-4 ring-red-500/5' : (theme === 'light' ? 'bg-white/70 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10')}`}>
+                        {inputMode === 'text' ? (
+                            <div className="flex-1 flex items-center gap-0 h-full pl-2 pr-4">
+                                <button type="button" onClick={() => fileInputRef.current?.click()} className={`w-8 h-8 rounded-full flex items-center justify-center transition-all shrink-0 ${theme === 'light' ? 'text-black/20 hover:text-black' : 'text-white/40 hover:text-white'}`}>
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                                </button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }} className={`w-8 h-8 rounded-full flex items-center justify-center transition-all shrink-0 ${theme === 'light' ? 'text-black/20 hover:text-black' : 'text-white/40 hover:text-white'}`}>
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                </button>
+                                <input type="file" ref={fileInputRef} onChange={(e) => { const files = Array.from(e.target.files || []).slice(0, 9); if (files.length > 0) { onUploadImages(files, quotedMessage || undefined); setQuotedMessage(null); } e.target.value = ''; }} accept="image/*" multiple className="hidden" />
+                                <form onSubmit={handleSend} className="flex-1 h-full flex items-center relative">
+                                    <input
+                                        type="text"
+                                        ref={inputRef}
+                                        value={inputText}
+                                        onPaste={handlePaste}
+                                        onChange={(e) => setInputText(e.target.value)}
+                                        placeholder={isSending ? "正在传输..." : "发送消息..."}
+                                        className={`w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 p-0 text-[14px] font-normal ${theme === 'light' ? 'text-gray-900 placeholder:text-black/30' : 'text-white placeholder:text-white/20'}`}
+                                        disabled={isSending}
+                                    />
+                                    {inputText.length > 0 && !isSending && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setInputText(''); inputRef.current?.focus(); }}
+                                            className={`absolute right-0 w-5 h-5 rounded-full flex items-center justify-center transition-all hover:scale-110 ${theme === 'light' ? 'bg-black/5 text-black/40 hover:bg-black/10' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                                        >
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                                        </button>
+                                    )}
+                                </form>
+                            </div>
+                        ) : (
+                            <button
+                                onMouseDown={startRecording} onMouseUp={stopRecording} onMouseLeave={stopRecording}
+                                onTouchStart={(e) => { e.preventDefault(); startRecording(); }} onTouchEnd={(e) => { e.preventDefault(); stopRecording(); }}
+                                className="flex-1 flex items-center justify-center h-full px-6 rounded-[24px]"
+                            >
+                                {isRecording ? (
+                                    <div className="flex items-center gap-3 animate-in fade-in duration-300">
+                                        <div className="flex gap-1.5 items-center">
+                                            {[1, 2, 3, 4].map(i => (
+                                                <div key={i} className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" style={{ animationDelay: `${i * 0.2}s` }} />
+                                            ))}
+                                        </div>
+                                        <span className="text-[14px] font-mono text-red-500 font-bold tracking-widest">{Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}</span>
+                                    </div>
+                                ) : (
+                                    <span className={`text-[14px] font-medium ${theme === 'light' ? 'text-black/40' : 'text-white/40'}`}>按住 说话</span>
+                                )}
+                            </button>
                         )}
                     </div>
-                    {quotedMessage && (
-                        <div className={`mb-2 p-2 rounded-xl backdrop-blur-xl border flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 duration-300 ${theme === 'light' ? 'bg-black/5 border-black/5 text-black' : 'bg-white/5 border-white/10 text-white'}`}>
-                            <div className="flex-1 min-w-0">
-                                <div className={`text-[12px] font-normal uppercase tracking-tight mb-0.5 truncate ${theme === 'light' ? 'opacity-60' : 'opacity-40'}`}>引用 {quotedMessage.userName}</div>
-                                <div className="text-[14px] opacity-80 truncate">{quotedMessage.content}</div>
-                            </div>
-                            <button onClick={() => setQuotedMessage(null)} className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:bg-black/10 transition-colors">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                        {inputMode === 'text' && inputText.trim() ? (
+                            <button onClick={handleSend} disabled={isSending} className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-xl active:scale-90 ${theme === 'light' ? 'bg-black text-white' : 'bg-white text-black'}`}>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" /></svg>
                             </button>
-                        </div>
-                    )}
-                    <div className={`backdrop-blur-md ${isMobile ? 'h-14 rounded-[28px] pl-2' : 'h-9 rounded-[18px]'} p-1 border shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center relative ${theme === 'light' ? 'bg-white/60 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10'}`}>
-                        <button type="button" onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')} className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${inputMode === 'voice' ? 'bg-white text-black shadow-lg scale-105' : (theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black/60 hover:bg-black/10' : 'bg-white/5 text-white/50 hover:text-white/70 hover:bg-white/10')}`}>
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                            </svg>
-                        </button>
-
-                        {inputMode === 'text' && (
-                            <div className="relative flex items-center h-7 px-1">
-                                <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
-                                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${showEmojiPicker ? 'bg-white/20' : 'hover:bg-white/5'} text-lg`}
-                                >
-                                    😀
-                                </button>
-
-                                {showEmojiPicker && (
-                                    <div
-                                        className={`absolute bottom-[calc(100%+12px)] left-0 z-50 p-2.5 rounded-[24px] backdrop-blur-3xl border border-white/10 shadow-2xl grid grid-cols-5 gap-1 w-48 animate-in fade-in slide-in-from-bottom-2 duration-200 ${theme === 'light' ? 'bg-white/95' : 'bg-[#1a1a1a]/95'}`}
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        {COMMON_EMOJIS.map(emoji => (
-                                            <button
-                                                key={emoji}
-                                                type="button"
-                                                onClick={() => { setInputText(prev => prev + emoji); setShowEmojiPicker(false); inputRef.current?.focus(); }}
-                                                className="w-8 h-8 flex items-center justify-center text-xl hover:scale-120 hover:bg-white/5 rounded-xl transition-all active:scale-90"
-                                            >
-                                                {emoji}
-                                            </button>
-                                        ))}
-                                        <div className={`absolute bottom-[-5px] left-3 w-2.5 h-2.5 rotate-45 border-b border-r border-white/10 ${theme === 'light' ? 'bg-white/95' : 'bg-[#1a1a1a]/95'}`} />
-                                    </div>
+                        ) : (
+                            <button onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')} className={`w-12 h-12 rounded-full flex items-center justify-center transition-all border shrink-0 shadow-lg ${theme === 'light' ? 'bg-white border-black/5 text-black/40' : 'bg-white/5 border-white/5 text-white/40'}`}>
+                                {inputMode === 'text' ? (
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                                ) : (
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                 )}
-                            </div>
+                            </button>
                         )}
-
-                        <div className={`flex-1 flex items-center h-7 overflow-hidden ${inputMode === 'text' ? 'mx-1' : 'ml-2'}`}>
-                            {inputMode === 'text' ? (
-                                <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 h-full">
-                                    <button type="button" onClick={() => fileInputRef.current?.click()} className={`w-6 h-6 rounded-full flex items-center justify-center transition-all shrink-0 text-lg font-light ${theme === 'light' ? 'text-black/20 hover:text-black' : 'text-white/40 hover:text-white'}`}>+</button>
-                                    <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) { const reply = quotedMessage; setQuotedMessage(null); onUploadImage(f, reply || undefined); } }} accept="image/*" className="hidden" />
-                                    <div className="flex-1 relative flex items-center h-full min-w-0">
-                                        <input
-                                            type="text"
-                                            ref={inputRef}
-                                            value={inputText}
-                                            onPaste={handlePaste}
-                                            onChange={(e) => setInputText(e.target.value)}
-                                            onFocus={() => {
-                                                if (isMobile) {
-                                                    // use slight delay to wait for keyboard animation
-                                                    setTimeout(() => {
-                                                        inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-                                                        scrollToBottom('smooth');
-                                                    }, 300);
-                                                }
-                                            }}
-                                            placeholder="..."
-                                            className={`w-full bg-transparent text-base font-normal focus:outline-none pr-8 ${theme === 'light' ? 'text-black placeholder:text-black/15' : 'text-white placeholder:text-white/20'}`}
-                                            disabled={isSending}
-                                        />
-                                        {inputText && (
-                                            <button
-                                                type="button"
-                                                onClick={() => { setInputText(''); inputRef.current?.focus(); }}
-                                                className={`absolute right-0 w-6 h-6 rounded-full flex items-center justify-center transition-all ${theme === 'light' ? 'bg-black/10 text-black hover:bg-black/20' : 'bg-white/20 text-white hover:bg-white/30'}`}
-                                            >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </button>
-                                        )}
-                                    </div>
-                                </form>
-                            ) : (
-                                <button onPointerDown={(e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (e) { } startRecording(); }} onPointerUp={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} onPointerCancel={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} className={`flex-1 h-7 rounded-full font-normal tracking-[0.1em] text-[12px] uppercase transition-all select-none touch-none flex items-center justify-center ${isRecording ? 'bg-white text-black scale-[0.98]' : (theme === 'light' ? 'bg-black/5 text-black/20 hover:bg-black/10' : 'bg-white/5 text-white/40 hover:bg-white/10')}`}>
-                                    {isRecording ? '松开发送' : '按住说话'}
-                                </button>
-                            )}
-                        </div>
-                        <button onClick={() => inputMode === 'text' && handleSend()} className={`rounded-full flex items-center justify-center transition-all bg-white text-black shrink-0 ${inputMode === 'text' ? 'w-7 h-7' : 'w-0 h-7 border-0 p-0 overflow-hidden'} ${inputMode === 'text' && inputText.trim() ? 'opacity-100 scale-100 active:scale-95 shadow-xl' : 'opacity-0 scale-50 pointer-events-none'}`}>
-                            <svg className="w-4 h-4 translate-x-[0.5px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 5l7 7-7 7M5 12h15" />
-                            </svg>
-                        </button>
                     </div>
                 </div>
-            )}
+            </div>
 
-            {viewerIndex !== null && typeof document !== 'undefined' && (
-                <div className={`fixed inset-0 z-[99999] flex flex-col transition-all duration-500 backdrop-blur-3xl ${theme === 'light' ? 'bg-white/90' : 'bg-black/80'}`} onClick={() => setViewerIndex(null)}>
-                    <div className="absolute top-6 right-6 z-[120] pointer-events-auto">
-                        <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border shadow-2xl backdrop-blur-xl ${theme === 'light' ? 'bg-black/80 text-white border-white/20 hover:bg-black' : 'bg-white/10 text-white border-white/20 hover:bg-white/20'}`}>
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
+            {viewerIndex !== null && (
+                <div className="fixed inset-0 z-[10000] flex flex-col bg-black animate-in fade-in duration-500 overflow-hidden" onPointerMove={(e) => e.stopPropagation()}>
+                    <div className="absolute top-0 inset-x-0 h-24 bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none" />
+                    <div className="absolute top-8 right-8 z-20 flex items-center gap-6">
+                        <button onClick={() => { const url = galleryImages[viewerIndex].url; const a = document.createElement('a'); a.href = url; a.download = `whisper_${Date.now()}.jpg`; document.body.appendChild(a); a.click(); document.body.removeChild(a); }} className="text-white/60 hover:text-white transition-colors p-2"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg></button>
+                        <button onClick={() => setViewerIndex(null)} className="text-white/60 hover:text-white transition-colors p-2 glass-effect rounded-full"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                     </div>
-
-                    <div className="flex-1 relative flex items-center justify-center p-0 overflow-hidden pointer-events-auto w-full h-full">
-                        <TransformWrapper centerOnInit minScale={1} maxScale={8}>
-                            <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
+                    <div className="absolute top-8 left-8 z-20">
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-white font-medium tracking-widest text-[13px] uppercase">{galleryImages[viewerIndex].author}</span>
+                            <span className="text-white/40 text-[10px] tabular-nums tracking-wider uppercase">{formatDistanceToNow(galleryImages[viewerIndex].timestamp, { addSuffix: true, locale: zhCN })}</span>
+                        </div>
+                    </div>
+                    <div className="flex-1 flex items-center justify-center relative touch-none">
+                        <TransformWrapper
+                            initialScale={1}
+                            minScale={0.1}
+                            maxScale={5}
+                            centerOnInit={true}
+                            limitToBounds={false}
+                        >
+                            <TransformComponent wrapperClass="!w-screen !h-screen" contentClass="!w-screen !h-screen flex items-center justify-center">
                                 <img
                                     src={galleryImages[viewerIndex].url}
-                                    className={`max-w-full max-h-full object-contain select-none ${theme === 'light' ? 'shadow-[0_0_100px_rgba(0,0,0,0.2)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.8)]'}`}
-                                    alt="Viewer"
-                                    onClick={(e) => e.stopPropagation()}
+                                    className="max-w-full max-h-full object-contain shadow-2xl"
+                                    alt="Full view"
+                                    style={{ width: 'auto', height: 'auto' }}
                                 />
                             </TransformComponent>
                         </TransformWrapper>
+                        {viewerIndex > 0 && (
+                            <button onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex - 1); }} className="absolute left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all z-20 backdrop-blur-md border border-white/10"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+                        )}
+                        {viewerIndex < galleryImages.length - 1 && (
+                            <button onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex + 1); }} className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all z-20 backdrop-blur-md border border-white/10"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></button>
+                        )}
                     </div>
-
-                    <div className="p-6 pt-0 pb-12 md:pb-6 shrink-0 z-[110] flex justify-center pointer-events-none">
-                        <div className="w-full max-w-[460px] flex items-center gap-2 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                            <button disabled={viewerIndex === 0} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! - 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === 0 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg></button>
-
-                            <div className={`flex-1 backdrop-blur-3xl h-9 rounded-[18px] px-4 border shadow-[0_20px_50px_rgba(0,0,0,0.2)] flex items-center justify-between min-0 ${theme === 'light' ? 'bg-white/90 border-black/10' : 'bg-[#1a1a1a]/90 border-white/10'}`}>
-                                <div className="flex items-center gap-3 min-0">
-                                    <div className={`w-2 h-2 rounded-full shrink-0 ${theme === 'light' ? 'bg-black/60 shadow-[0_0_8px_rgba(0,0,0,0.3)]' : 'bg-white/60 shadow-[0_0_8px_rgba(255,255,255,0.5)]'}`} />
-                                    <span className={`text-[13px] font-normal tracking-[0.1em] uppercase truncate ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>{galleryImages[viewerIndex].author}</span>
-                                </div>
-                                <div className="flex items-center gap-3 shrink-0 ml-2">
-                                    <span className={`text-[12px] font-normal tracking-[0.1em] tabular-nums whitespace-nowrap ${theme === 'light' ? 'text-black/50' : 'text-white/50'}`}>{formatTimeSimple(new Date(galleryImages[viewerIndex].timestamp))}</span>
-                                    <div className={`w-px h-4 ${theme === 'light' ? 'bg-black/10' : 'bg-white/10'}`} />
-                                    <span className={`text-[12px] font-normal tracking-[0.1em] whitespace-nowrap ${theme === 'light' ? 'text-black/40' : 'text-white/40'}`}>{viewerIndex + 1}/{galleryImages.length}</span>
-                                </div>
-                            </div>
-
-                            <button disabled={viewerIndex === galleryImages.length - 1} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! + 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === galleryImages.length - 1 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg></button>
-                        </div>
+                    <div className="absolute bottom-12 inset-x-0 flex justify-center z-20 items-center gap-4">
+                        <div className="px-5 py-2.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-2xl text-[12px] text-white/90 tabular-nums font-medium tracking-[0.2em]">{viewerIndex + 1} / {galleryImages.length}</div>
                     </div>
                 </div>
             )}

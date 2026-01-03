@@ -92,3 +92,11 @@ export interface UserPresence {
     isTyping?: boolean;
     lastReadTimestamp?: number;
 }
+
+export interface Suggestion {
+    id: string;
+    user_id: string;
+    user_name: string;
+    content: string;
+    timestamp: string;
+}

@@ -5,6 +5,11 @@ import { supabase } from '@/lib/supabaseClient';
 import { ChatInterface } from '@/components/ChatInterface';
 import { PWAInstaller } from '@/components/PWAInstaller';
 import { IdleDimmer } from '@/components/IdleDimmer';
+import { SettingsPanel } from '@/components/SettingsPanel';
+import { SuggestionPanel } from '@/components/SuggestionPanel';
+import { GMPrompt } from '@/components/GMPrompt';
+import { useGMLogic } from '@/hooks/useGMLogic';
+import { useSuggestionLogic } from '@/hooks/useSuggestionLogic';
 import { LocationState, ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType, ActivityMarker, RoomStats, UserPresence } from '@/types';
 import { getRoomId, getScaleLevel, getBucket, BUCKET_SIZES, getLocationName, getCountryCode, canJoinHex } from '@/lib/spatialService';
 import { uploadImage, uploadVoice } from '@/lib/r2Storage';
@@ -65,12 +70,7 @@ export default function Home() {
   const [showUnifiedSettings, setShowUnifiedSettings] = useState(false);
   const [tempName, setTempName] = useState('');
 
-  // GM Account State
-  const [gmClickCount, setGmClickCount] = useState(0);
-  const [gmClickTimer, setGmClickTimer] = useState<NodeJS.Timeout | null>(null);
-  const [showGmPrompt, setShowGmPrompt] = useState(false);
-  const [gmPassword, setGmPassword] = useState('');
-  const [isGmLoggingIn, setIsGmLoggingIn] = useState(false);
+
 
   const [location, setLocation] = useState<LocationState>(CHINA_DEFAULT);
 
@@ -91,14 +91,6 @@ export default function Home() {
   const [chatWidth, setChatWidth] = useState(360);
   const [isResizing, setIsResizing] = useState(false);
   const resizerRef = useRef<HTMLDivElement>(null);
-
-  // Suggestion System
-  const [showSuggestionPanel, setShowSuggestionPanel] = useState(false);
-  const [suggestionText, setSuggestionText] = useState('');
-  const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
-  const [suggestionStatus, setSuggestionStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const suggestionScrollRef = useRef<HTMLDivElement>(null);
 
   // Existing chatrooms for hexagon display
   const [existingRoomIds, setExistingRoomIds] = useState<string[]>([]);
@@ -132,6 +124,17 @@ export default function Home() {
     [ScaleLevel.CITY]: [],
     [ScaleLevel.WORLD]: []
   });
+
+  // Hooks Logic
+  const {
+    gmClickCount, showGmPrompt, setShowGmPrompt, gmPassword, setGmPassword, isGmLoggingIn,
+    handleLogoClick, handleGmLogin, handleLogoutGM
+  } = useGMLogic(currentUser, setCurrentUser, setTempName, setShowUnifiedSettings, onlineUsers);
+
+  const {
+    showSuggestionPanel, setShowSuggestionPanel, suggestionText, setSuggestionText,
+    isSubmittingSuggestion, suggestionStatus, suggestions, suggestionScrollRef, handleSuggestionSubmit
+  } = useSuggestionLogic(currentUser);
 
   const [hasMore, setHasMore] = useState<Record<ScaleLevel, boolean>>({
     [ScaleLevel.DISTRICT]: true,
@@ -495,197 +498,7 @@ export default function Home() {
     setHasMore(prev => ({ ...prev, [activeScale]: true }));
   }, [userGps, activeScale, currentUser.isGM]); // Added isGM to dependencies
 
-  // GM Activation Logic
-  const handleLogoClick = useCallback(() => {
-    if (currentUser.isGM) return;
 
-    setGmClickCount(prev => {
-      const newCount = prev + 1;
-      if (newCount >= 5) {
-        setShowGmPrompt(true);
-        return 0;
-      }
-      return newCount;
-    });
-
-    if (gmClickTimer) clearTimeout(gmClickTimer);
-    const timer = setTimeout(() => {
-      setGmClickCount(0);
-    }, 2000); // Reset count after 2s of inactivity
-    setGmClickTimer(timer);
-  }, [currentUser.isGM, gmClickTimer]);
-
-  const handleGmLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (gmPassword !== '123' || !supabase) {
-      alert('密码错误或系统未就绪');
-      setGmPassword('');
-      return;
-    }
-
-    setIsGmLoggingIn(true);
-    try {
-      // Single GM Session Check: Check site_settings for active GM
-      const { data: settings } = await supabase.from('site_settings').select('value_text').eq('key', 'gm_active_user_id').single();
-
-      if (settings?.value_text && settings.value_text !== currentUser.id) {
-        const isAnotherGmOnline = Object.values(onlineUsers).flat().some((p: any) => p.isGM && p.user_id !== currentUser.id);
-
-        if (isAnotherGmOnline) {
-          if (!confirm('检测到已有另一位特工老蔡在线（可能是您在其他设备上的会话）。是否强制接管该身份？')) {
-            setShowGmPrompt(false);
-            setGmPassword('');
-            setIsGmLoggingIn(false);
-            return;
-          }
-        }
-      }
-
-      // Set GM Status
-      const gmUser: User = {
-        ...currentUser,
-        name: '老蔡',
-        isGM: true
-      };
-
-      setCurrentUser(gmUser);
-      localStorage.setItem('whisper_user_name', '老蔡');
-
-      // Update site_settings
-      await supabase.from('site_settings').upsert({ key: 'gm_active_user_id', value_text: currentUser.id, updated_at: new Date().toISOString() });
-
-      setShowGmPrompt(false);
-      setGmPassword('');
-      alert('超级权限已激活，指挥官。');
-    } catch (err) {
-      console.error('GM Login Error:', err);
-    } finally {
-      setIsGmLoggingIn(false);
-    }
-  };
-
-  const handleLogoutGM = () => {
-    if (!currentUser.isGM) return;
-
-    // Reset to a random name
-    const newName = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
-    const guestUser: User = {
-      ...currentUser,
-      name: newName,
-      isGM: false
-    };
-
-    setCurrentUser(guestUser);
-    setTempName(newName);
-    localStorage.setItem('whisper_user_name', newName); // This is enough as isGM is derived or temporary
-
-    setShowUnifiedSettings(false);
-    alert('已成功退出超级权限，您现在是普通用户。');
-  };
-
-  const handleUpdateAnyUserName = useCallback(async (userId: string, newName: string) => {
-    if (!currentUser.isGM || !supabase) return;
-
-    // Uniqueness check for GM action too
-    const allOnlineUserNames = Object.values(onlineUsers).flat().map(u => u.user_name);
-    if (allOnlineUserNames.includes(newName)) {
-      alert('目标代号已被占用，请尝试其他代号。');
-      return;
-    }
-
-    try {
-      // 1. Update DB for future loads
-      const { error } = await supabase.from('messages').update({ user_name: newName }).eq('user_id', userId);
-      if (error) throw error;
-
-      // 2. Broadcast to all online clients for real-time update
-      const rid = roomIds[activeScale];
-      if (channelsRef.current[rid]) {
-        await channelsRef.current[rid].send({
-          type: 'broadcast',
-          event: 'user-update',
-          payload: { userId, newName }
-        });
-      }
-
-      alert(`已成功将用户名字全局同步更新为: ${newName}`);
-    } catch (err) {
-      console.error('Update name failed:', err);
-      alert('更改失败');
-    }
-  }, [currentUser.isGM, onlineUsers, roomIds, activeScale]);
-
-  const handleDeleteMessage = useCallback(async (messageId: string) => {
-    if (!currentUser.isGM || !supabase) return;
-    try {
-      const { error } = await supabase.from('messages').delete().eq('id', messageId);
-      if (error) throw error;
-      // Also broadcast deletion or let it sync via channel if we add deletion listener
-      alert('记录已彻底抹除');
-    } catch (err) {
-      alert('删除失败');
-    }
-  }, [currentUser.isGM]);
-
-  const onLoadMore = useCallback(async (scale: ScaleLevel) => {
-    const rid = roomIds[scale];
-    const msgs = allMessages[scale];
-    if (!supabase || !rid || msgs.length === 0) return;
-
-    const oldestTimestamp = new Date(msgs[0].timestamp).toISOString();
-
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('room_id', rid)
-      .lt('timestamp', oldestTimestamp)
-      .order('timestamp', { ascending: false })
-      .limit(30);
-
-    if (error) {
-      console.error('Fetch more error:', error);
-      return;
-    }
-
-    if (data && data.length > 0) {
-      const fetched = data.map((m: any) => ({
-        id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
-        content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
-        isGM: m.is_gm, replyTo: m.reply_to
-      })).reverse();
-
-      setAllMessages(prev => ({
-        ...prev,
-        [scale]: [...fetched, ...prev[scale]]
-      }));
-
-      if (data.length < 30) {
-        setHasMore(prev => ({ ...prev, [scale]: false }));
-      }
-    } else {
-      setHasMore(prev => ({ ...prev, [scale]: false }));
-    }
-  }, [roomIds, allMessages]);
-
-  // Suggestion Board Sync & Realtime
-  useEffect(() => {
-    if (!showSuggestionPanel || !supabase) return;
-
-    // Initial Fetch
-    supabase.from('suggestions').select('*').order('timestamp', { ascending: false }).limit(50).then(({ data }) => {
-      if (data) setSuggestions(data);
-    });
-
-    // Realtime Subscription
-    const channel = supabase.channel('suggestions_board')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'suggestions' }, (payload) => {
-        setSuggestions(prev => {
-          if (prev.some(s => s.id === payload.new.id)) return prev;
-          return [payload.new as any, ...prev].slice(0, 50);
-        });
-      })
-    return () => { supabase?.removeChannel(channel); };
-  }, [showSuggestionPanel]);
 
   // Separate effects for each room to handle jitter and subscription independently
   useEffect(() => {
@@ -772,7 +585,7 @@ export default function Home() {
 
     channelsRef.current[rid] = channel;
     return () => { if (supabase) { supabase.removeChannel(channel); delete channelsRef.current[rid]; } };
-  }, [mounted, roomIds[ScaleLevel.DISTRICT], currentUser, reconnectCounter, userGps, location.lat, location.lng]);
+  }, [mounted, roomIds[ScaleLevel.DISTRICT], activeScale, currentUser, reconnectCounter, userGps]);
 
   useEffect(() => {
     if (!mounted || !supabase || !roomIds[ScaleLevel.CITY]) return;
@@ -843,7 +656,7 @@ export default function Home() {
 
     channelsRef.current[rid] = channel;
     return () => { if (supabase) { supabase.removeChannel(channel); delete channelsRef.current[rid]; } };
-  }, [mounted, roomIds[ScaleLevel.CITY], currentUser, reconnectCounter, userGps, location.lat, location.lng]);
+  }, [mounted, roomIds[ScaleLevel.CITY], activeScale, currentUser, reconnectCounter, userGps]);
 
   useEffect(() => {
     if (!mounted || !supabase || !roomIds[ScaleLevel.WORLD]) return;
@@ -902,7 +715,91 @@ export default function Home() {
 
     channelsRef.current[rid] = channel;
     return () => { if (supabase) { supabase.removeChannel(channel); delete channelsRef.current[rid]; } };
-  }, [mounted, roomIds[ScaleLevel.WORLD], currentUser, reconnectCounter, userGps, location.lat, location.lng]);
+  }, [mounted, roomIds[ScaleLevel.WORLD], activeScale, currentUser, reconnectCounter, userGps]);
+
+  const handleUpdateAnyUserName = useCallback(async (userId: string, newName: string) => {
+    if (!currentUser.isGM || !supabase) return;
+
+    // Uniqueness check for GM action too
+    const allOnlineUserNames = Object.values(onlineUsers).flat().map(u => u.user_name);
+    if (allOnlineUserNames.includes(newName)) {
+      alert('目标代号已被占用，请尝试其他代号。');
+      return;
+    }
+
+    try {
+      // 1. Update DB for future loads
+      const { error } = await supabase.from('messages').update({ user_name: newName }).eq('user_id', userId);
+      if (error) throw error;
+
+      // 2. Broadcast to all online clients for real-time update
+      const rid = roomIds[activeScale];
+      if (channelsRef.current[rid]) {
+        await channelsRef.current[rid].send({
+          type: 'broadcast',
+          event: 'user-update',
+          payload: { userId, newName }
+        });
+      }
+
+      alert(`已成功将用户名字全局同步更新为: ${newName}`);
+    } catch (err) {
+      console.error('Update name failed:', err);
+      alert('更改失败');
+    }
+  }, [currentUser.isGM, onlineUsers, roomIds, activeScale]);
+
+  const handleDeleteMessage = useCallback(async (messageId: string) => {
+    if (!currentUser.isGM || !supabase) return;
+    try {
+      const { error } = await supabase.from('messages').delete().eq('id', messageId);
+      if (error) throw error;
+      // Also broadcast deletion or let it sync via channel if we add deletion listener
+      alert('记录已彻底抹除');
+    } catch (err) {
+      alert('删除失败');
+    }
+  }, [currentUser.isGM]);
+
+  const onLoadMore = useCallback(async (scale: ScaleLevel) => {
+    const rid = roomIds[scale];
+    const msgs = allMessages[scale];
+    if (!supabase || !rid || msgs.length === 0) return;
+
+    const oldestTimestamp = new Date(msgs[0].timestamp).toISOString();
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room_id', rid)
+      .lt('timestamp', oldestTimestamp)
+      .order('timestamp', { ascending: false })
+      .limit(30);
+
+    if (error) {
+      console.error('Fetch more error:', error);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const fetched = data.map((m: any) => ({
+        id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
+        content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
+        isGM: m.is_gm, replyTo: m.reply_to
+      })).reverse();
+
+      setAllMessages(prev => ({
+        ...prev,
+        [scale]: [...fetched, ...prev[scale]]
+      }));
+
+      if (data.length < 30) {
+        setHasMore(prev => ({ ...prev, [scale]: false }));
+      }
+    } else {
+      setHasMore(prev => ({ ...prev, [scale]: false }));
+    }
+  }, [roomIds, allMessages]);
 
   const handleSettingsSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -932,33 +829,7 @@ export default function Home() {
     setShowUnifiedSettings(false);
   };
 
-  const handleSuggestionSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const content = suggestionText.trim();
-    if (!content || isSubmittingSuggestion) return;
-    const lastTime = localStorage.getItem('last_suggestion_time');
-    const now = Date.now();
-    if (lastTime && now - parseInt(lastTime) < 60000) { alert(`提建议频率限制：每分钟一次`); return; }
-    setIsSubmittingSuggestion(true);
-    const tempId = Math.random().toString(36).substring(2, 11);
-    const opt = { id: tempId, user_id: currentUser.id, user_name: currentUser.name, content: content, timestamp: new Date().toISOString() };
-    setSuggestions(prev => [...prev, opt]);
-    setSuggestionText('');
-    try {
-      if (!supabase) throw new Error('Supabase not connected');
-      const { data, error } = await supabase.from('suggestions').insert({ user_id: currentUser.id, user_name: currentUser.name, content, timestamp: opt.timestamp }).select();
-      if (error) throw error;
-      if (data?.[0]) setSuggestions(prev => prev.map(s => s.id === tempId ? data[0] : s));
-      localStorage.setItem('last_suggestion_time', now.toString());
-      setSuggestionStatus('success');
-      setTimeout(() => setSuggestionStatus('idle'), 2000);
-    } catch (err: any) {
-      setSuggestions(prev => prev.filter(s => s.id !== tempId));
-      setSuggestionText(content);
-      setSuggestionStatus('error');
-      alert(`提交失败: ${err.message}`);
-    } finally { setIsSubmittingSuggestion(false); }
-  };
+
 
   const onSendMessage = useCallback(async (content: string, replyTo?: Message['replyTo']) => {
     const rid = roomIds[activeScale];
@@ -992,11 +863,10 @@ export default function Home() {
       });
       if (error) {
         console.error('Insert failed:', error);
-        // If it's a field missing error, notify user to run SQL
-        if (error.message?.includes('is_gm') || error.message?.includes('country_code')) {
-          alert('发送失败：数据库表结构不匹配。请在 Supabase SQL Editor 中运行 update_schema.sql 以更新表结构。');
+        if (error.message?.includes('is_gm') || error.message?.includes('country_code') || error.message?.includes('reply_to')) {
+          alert(`发送失败：数据库表结构不匹配 (${error.message})。请在 Supabase SQL Editor 中运行 update_schema.sql 以更新表结构。`);
         } else {
-          console.warn('Database sync failed but message will broadcast via P2P.');
+          console.warn('Database sync failed but message will broadcast via P2P. Full error:', JSON.stringify(error));
         }
       }
       // CRITICAL: Always broadcast even if insert fails, so other users see it in real-time.
@@ -1055,45 +925,76 @@ export default function Home() {
     } catch (err) { }
   }, [activeScale, roomIds]);
 
-  const onUploadImage = useCallback(async (file: File, replyTo?: Message['replyTo']) => {
+  const onUploadImages = useCallback(async (files: File[], replyTo?: Message['replyTo']) => {
     const rid = roomIds[activeScale];
-    if (!supabase || !rid) return;
+    if (!supabase || !rid || files.length === 0) return;
+
     const tempId = Math.random().toString(36).substring(2, 11);
-    const localUrl = URL.createObjectURL(file);
-    const tempMsg = { id: tempId, userId: currentUser.id, userName: currentUser.name, userAvatarSeed: currentUser.avatarSeed, content: localUrl, timestamp: Date.now(), type: 'image' as const, countryCode: currentUser.countryCode, replyTo };
+
+    // Create initial optimistic local URLs for all images
+    const localUrls = files.map(f => URL.createObjectURL(f));
+    const contentPlaceholder = localUrls.join(',');
+
+    const tempMsg = {
+      id: tempId,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userAvatarSeed: currentUser.avatarSeed,
+      content: contentPlaceholder,
+      timestamp: Date.now(),
+      type: 'image' as const,
+      countryCode: currentUser.countryCode,
+      replyTo
+    };
+
     setAllMessages(prev => ({ ...prev, [activeScale]: [...prev[activeScale], tempMsg] }));
+
     try {
-      const result = await uploadImage(file);
-      if (!result.success || !result.url) throw new Error(result.error);
-      const finalMsg = { ...tempMsg, content: result.url, isGM: currentUser.isGM, replyTo };
+      // Upload all images in parallel
+      const uploadPromises = files.map(file => uploadImage(file));
+      const results = await Promise.all(uploadPromises);
+
+      const successfulUrls = results
+        .filter(r => r.success && r.url)
+        .map(r => r.url as string);
+
+      if (successfulUrls.length === 0) {
+        throw new Error('All uploads failed');
+      }
+
+      const finalContent = successfulUrls.join(',');
+      const finalMsg = { ...tempMsg, content: finalContent, isGM: currentUser.isGM, replyTo };
+
       setAllMessages(prev => ({
         ...prev,
         [activeScale]: prev[activeScale].map(m => m.id === tempId ? finalMsg : m)
       }));
+
       const { error: dbError } = await supabase.from('messages').insert({
         id: tempId,
         room_id: rid,
         user_id: currentUser.id,
         user_name: currentUser.name,
         user_avatar_seed: currentUser.avatarSeed,
-        content: result.url,
+        content: finalContent,
         timestamp: new Date(finalMsg.timestamp).toISOString(),
         type: 'image',
         is_gm: currentUser.isGM,
         country_code: currentUser.countryCode,
         reply_to: replyTo
       });
+
       if (dbError) {
-        console.error('Insert image failed:', dbError);
-        if (dbError.message?.includes('is_gm') || dbError.message?.includes('country_code')) {
-          alert('发送失败：数据库表结构不匹配。请在 Supabase SQL Editor 中运行 update_schema.sql 以更新表结构。');
-        }
+        console.error('Insert image group failed:', dbError);
       }
-      // CRITICAL: Always broadcast even if insert fails
-      if (channelsRef.current[rid]) await channelsRef.current[rid].send({ type: 'broadcast', event: 'chat-message', payload: finalMsg });
+
+      if (channelsRef.current[rid]) {
+        await channelsRef.current[rid].send({ type: 'broadcast', event: 'chat-message', payload: finalMsg });
+      }
     } catch (err) {
-      console.error('Image upload error:', err);
+      console.error('Batch image upload error:', err);
       setAllMessages(prev => ({ ...prev, [activeScale]: prev[activeScale].filter(m => m.id !== tempId) }));
+      alert('图片上传失败，请检查网络后重试。');
     }
   }, [activeScale, roomIds, currentUser]);
 
@@ -1133,8 +1034,11 @@ export default function Home() {
       });
       if (dbError) {
         console.error('Insert voice failed:', dbError);
-        if (dbError.message?.includes('is_gm') || dbError.message?.includes('country_code')) {
-          alert('发送失败：数据库表结构不匹配。请在 Supabase SQL Editor 中运行 update_schema.sql 以更新表结构。');
+        const errorMsg = dbError.message || '';
+        if (errorMsg.includes('is_gm') || errorMsg.includes('country_code') || errorMsg.includes('reply_to') || errorMsg.includes('voice_duration')) {
+          alert(`发送失败：数据库表结构不匹配 (${errorMsg})。请在 Supabase SQL Editor 中运行 update_schema.sql 以更新表结构。`);
+        } else {
+          console.warn('Database sync failed. Full error details:', JSON.stringify(dbError));
         }
       }
       // CRITICAL: Always broadcast even if insert fails
@@ -1152,18 +1056,23 @@ export default function Home() {
       .select('*')
       .eq('room_id', rid)
       .eq('type', 'image')
+      .neq('is_recalled', true)
       .order('timestamp', { ascending: false });
     if (!data) return [];
-    return data.map((m: any) => ({
-      id: m.id,
-      url: m.content,
-      caption: '',
-      author: m.user_name || `NODE_${m.user_id.substring(0, 4)}`,
-      likes: 0,
-      lat: 0,
-      lng: 0,
-      timestamp: new Date(m.timestamp).getTime()
-    }));
+
+    return data.flatMap((m: any) => {
+      const urls = (m.content || '').split(',');
+      return urls.map((url: string, idx: number) => ({
+        id: urls.length > 1 ? `${m.id}_${idx}` : m.id,
+        url: url,
+        caption: '',
+        author: m.user_name || `NODE_${m.user_id.substring(0, 4)}`,
+        likes: 0,
+        lat: 0,
+        lng: 0,
+        timestamp: new Date(m.timestamp).getTime()
+      }));
+    });
   }, []);
 
   if (!mounted) return <div className="h-screen w-screen bg-black" />;
@@ -1189,164 +1098,49 @@ export default function Home() {
   return (
     <div className="fixed inset-0 bg-black overflow-hidden select-none" suppressHydrationWarning>
       {isLocatingOverlay}
-      {showUnifiedSettings && (
-        <div className={`fixed inset-0 z-[20000] flex items-center justify-center p-4 sm:p-6 backdrop-blur-2xl transition-all duration-500 ${theme === 'light' ? 'bg-white/40' : 'bg-black/60'}`}>
-          <div className="absolute inset-0" onClick={() => currentUser.name !== '游客' && setShowUnifiedSettings(false)} />
-          <div className={`w-full max-sm:max-w-none max-w-sm crystal-black-outer p-5 rounded-[32px] container-rainbow-main flex flex-col gap-4 animate-in zoom-in-95 duration-500 relative ${theme === 'light' ? 'shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.5)]'}`}>
-            {currentUser.name !== '游客' && (
-              <button onClick={() => setShowUnifiedSettings(false)} className={`absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center transition-all z-50 border ${theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black border-black/5' : 'bg-white/5 text-white/40 hover:text-white border-white/5'}`}>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            )}
+      <SettingsPanel
+        show={showUnifiedSettings}
+        onClose={() => currentUser.name !== '游客' && setShowUnifiedSettings(false)}
+        theme={theme}
+        setTheme={setTheme}
+        currentUser={currentUser}
+        tempName={tempName}
+        setTempName={setTempName}
+        fontSize={fontSize}
+        setFontSize={setFontSize}
+        isMobile={isMobile}
+        isImmersiveMode={isImmersiveMode}
+        setIsImmersiveMode={setIsImmersiveMode}
+        onLogoClick={handleLogoClick}
+        onLogoutGM={handleLogoutGM}
+        onOpenSuggestions={() => setShowSuggestionPanel(true)}
+        onSave={handleSettingsSubmit}
+      />
 
-            <div className="flex flex-col gap-1 px-1">
-              <div className="flex items-center gap-2">
-                <img src="/logo.png" onClick={handleLogoClick} className="w-6 h-6 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
-                <h3 className={`text-xs font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/60' : 'text-white/50'}`}>乌托邦</h3>
-              </div>
-              <p className={`text-[9px] font-normal uppercase tracking-wider ${theme === 'light' ? 'text-black/40' : 'text-white/35'}`}>Privacy secured with 2km random offset</p>
-            </div>
+      <SuggestionPanel
+        show={showSuggestionPanel}
+        onClose={() => setShowSuggestionPanel(false)}
+        theme={theme}
+        suggestions={suggestions}
+        currentUser={currentUser}
+        onLogoClick={handleLogoClick}
+        suggestionText={suggestionText}
+        setSuggestionText={setSuggestionText}
+        suggestionStatus={suggestionStatus}
+        isSubmitting={isSubmittingSuggestion}
+        onSubmit={handleSuggestionSubmit}
+        scrollRef={suggestionScrollRef}
+      />
 
-            <form onSubmit={handleSettingsSubmit} className="flex flex-col gap-3.5 pt-1">
-              <input type="text" maxLength={12} placeholder="在这更改昵称" className={`w-full border rounded-xl px-4 py-2.5 font-normal outline-none ring-2 ring-transparent transition-all text-sm ${theme === 'light' ? 'bg-black/5 border-black/10 text-black placeholder:text-black/35 focus:ring-black/5' : 'bg-white/5 border-white/10 text-white placeholder:text-white/35 focus:ring-white/10'}`} value={tempName} onChange={(e) => setTempName(e.target.value)} autoFocus />
-              <div className="grid grid-cols-2 gap-2.5 select-none">
-                <div onClick={() => setTheme('dark')} className={`py-2 px-4 rounded-xl border flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95 ${theme === 'dark' ? 'bg-white/10 border-white/20' : 'bg-transparent border-white/5 opacity-50 hover:opacity-80'}`}>
-                  <div className="w-5 h-5 rounded-full bg-[#1a1a1a] border border-white/20 shadow-[0_0_100px_rgba(255,255,255,0.1)] flex-shrink-0" /><span className="text-[11px] font-normal text-white/80 tracking-tight uppercase">深色</span>
-                </div>
-                <div onClick={() => setTheme('light')} className={`py-2 px-4 rounded-xl border flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95 ${theme === 'light' ? 'bg-white border-white text-black' : 'bg-transparent border-white/5 opacity-50 hover:opacity-80'}`}>
-                  <div className="w-5 h-5 rounded-full bg-white border border-gray-200 shadow-sm flex-shrink-0" /><span className={`text-[11px] font-normal tracking-tight uppercase ${theme === 'light' ? 'text-black' : 'text-white/80'}`}>浅色</span>
-                </div>
-              </div>
-
-              {isMobile && (
-                <div
-                  onClick={() => {
-                    const newVal = !isImmersiveMode;
-                    setIsImmersiveMode(newVal);
-                    localStorage.setItem('whisper_immersive_mode', String(newVal));
-                  }}
-                  className={`py-3 px-4 rounded-xl border flex items-center justify-between cursor-pointer transition-all active:scale-95 ${theme === 'light' ? 'bg-black/5 border-black/10' : 'bg-white/5 border-white/10'}`}
-                >
-                  <span className={`text-[11px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>沉浸模式 (隐藏地图)</span>
-                  <div className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${isImmersiveMode ? 'bg-green-500' : (theme === 'light' ? 'bg-black/20' : 'bg-white/20')}`}>
-                    <div className={`absolute top-1 w-3 h-3 rounded-full bg-white shadow-sm transition-all duration-300 ${isImmersiveMode ? 'left-[22px]' : 'left-1'}`} />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-2 p-1">
-                <div className={`flex items-center justify-between text-[11px] font-normal uppercase tracking-tight px-1 ${theme === 'light' ? 'text-black/60' : 'text-white/40'}`}>
-                  <span>文字大小</span>
-                  <span>{fontSize}px</span>
-                </div>
-                <input
-                  type="range"
-                  min="12"
-                  max="24"
-                  step="1"
-                  value={fontSize}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value);
-                    setFontSize(val);
-                    localStorage.setItem('whisper_font_size', val.toString());
-                  }}
-                  className={`w-full h-1.5 rounded-lg appearance-none cursor-pointer ${theme === 'light' ? 'bg-black/10 accent-black' : 'bg-white/10 accent-white'}`}
-                />
-              </div>
-
-              {currentUser.isGM && (
-                <button
-                  type="button"
-                  onClick={handleLogoutGM}
-                  className={`w-full py-2.5 rounded-xl border flex items-center justify-center gap-2 transition-all active:scale-95 bg-red-500/10 border-red-500/20 text-red-500 text-xs font-normal uppercase tracking-wider`}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                  </svg>
-                  退出超级权限 (老蔡)
-                </button>
-              )}
-
-              <div className={`p-3 border rounded-2xl flex flex-col gap-2 ${theme === 'light' ? 'bg-black/5 border-black/5' : 'bg-white/5 border-white/10'}`}>
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                  <span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/70' : 'text-white/70'}`}>隐私保护说明</span>
-                </div>
-                <p className={`text-[10px] font-normal leading-relaxed lowercase tracking-wide ${theme === 'light' ? 'text-black/50' : 'text-white/45'}`}>
-                  为了保护您的驻地隐私，系统已自动为您的实时位置添加约 **2公里** 的随机偏移。这意味着即使在"地区"频道中，其他用户也无法精确推断您的真实住所。
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <button type="button" onClick={() => setShowSuggestionPanel(true)} className={`w-full py-2.5 font-normal uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all border text-xs ${theme === 'light' ? 'bg-black/5 text-black/50 hover:bg-black/10 border-black/5' : 'bg-white/5 text-white/50 hover:bg-white/10 border-white/5'}`}>提建议</button>
-                <button type="submit" className="w-full py-2.5 bg-white text-black font-normal uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:shadow-[0_0_30_px_rgba(255,255,255,0.3)] shadow-xl text-xs">保存</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      {showSuggestionPanel && (
-        <div className={`fixed inset-0 z-[20000] flex items-center justify-center p-4 sm:p-6 backdrop-blur-2xl transition-all duration-500 ${theme === 'light' ? 'bg-white/40' : 'bg-black/60'}`}>
-          <div className={`w-full max-w-[500px] h-[85vh] crystal-black-outer rounded-[40px] container-rainbow-main flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-700 relative ${theme === 'light' ? 'shadow-[0_40px_100px_-20px_rgba(0,0,0,0.15)]' : 'shadow-[0_0_150px_rgba(0,0,0,0.8)]'}`}>
-            <div className={`p-6 border-b flex items-center justify-between backdrop-blur-xl ${theme === 'light' ? 'bg-black/5 border-black/5' : 'bg-white/5 border-white/10'}`}>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-3">
-                  <img src="/logo.png" onClick={handleLogoClick} className="w-8 h-8 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
-                  <h2 className={`text-lg font-normal tracking-tight uppercase ${theme === 'light' ? 'text-black' : 'text-white'}`}>进化建议看板</h2>
-                </div>
-                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/50' : 'text-white/50'}`}>实时接收其他特工建议</span></div>
-              </div>
-              <button onClick={() => setShowSuggestionPanel(false)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border ${theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black border-black/5' : 'bg-white/5 text-white/40 hover:text-white border-white/5'}`}>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div ref={suggestionScrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth custom-scrollbar overscroll-contain">
-              {suggestions.length === 0 ? <div className={`h-full flex flex-col items-center justify-center underline uppercase tracking-tight ${theme === 'light' ? 'text-black/20' : 'text-white/20'}`}>暂无建议</div> : suggestions.map((s, idx) => (
-                <div key={s.id || idx} className={`flex flex-col gap-2 ${s.user_id === currentUser.id ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-2 px-1"><span className={`text-[10px] font-normal uppercase tracking-tighter ${theme === 'light' ? 'text-black/50' : 'text-white/40'}`}>{s.user_id === currentUser.id ? '我' : s.user_name}</span><span className={`text-[8px] font-normal tabular-nums lowercase ${theme === 'light' ? 'text-black/30' : 'text-white/20'}`}>{s.timestamp ? new Date(s.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '刚刚'}</span></div>
-                  <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] font-normal leading-relaxed border shadow-sm ${s.user_id === currentUser.id
-                    ? `rounded-tr-none ${theme === 'light' ? 'bg-black/10 border-black/10 text-black' : 'bg-white/15 border-white/30 text-white'}`
-                    : `rounded-tl-none ${theme === 'light' ? 'bg-black/5 border-black/5 text-black/80' : 'bg-white/5 border-white/10 text-white/80'}`
-                    }`}>{s.content}</div>
-                </div>
-              ))}
-            </div>
-            <div className={`p-6 border-t backdrop-blur-2xl ${theme === 'light' ? 'bg-white/40 border-black/5' : 'bg-black/40 border-white/10'}`}>
-              <form onSubmit={handleSuggestionSubmit} className="flex flex-col gap-4">
-                <textarea className={`w-full h-24 border rounded-2xl p-4 font-normal outline-none ring-2 ring-transparent transition-all resize-none text-sm leading-relaxed ${theme === 'light' ? 'bg-black/5 border-black/10 text-black placeholder:text-black/30 focus:ring-black/5' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:ring-white/10'}`} placeholder="输入建议..." value={suggestionText} onChange={(e) => setSuggestionText(e.target.value)} />
-                <button type="submit" disabled={isSubmittingSuggestion || !suggestionText.trim()} className={`w-full py-4 rounded-xl font-normal uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-3 ${suggestionStatus === 'success' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : (theme === 'light' ? 'bg-black text-white hover:shadow-[0_0_30px_rgba(0,0,0,0.2)] shadow-xl' : 'bg-white text-black hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] shadow-xl')}`}>{isSubmittingSuggestion ? '发送中...' : suggestionStatus === 'success' ? '已发送' : '发送进化建议'}</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-      {showGmPrompt && (
-        <div className={`fixed inset-0 z-[30000] flex items-center justify-center p-6 backdrop-blur-2xl transition-all duration-500 ${theme === 'light' ? 'bg-white/40' : 'bg-black/60'}`}>
-          <div className="w-full max-w-xs crystal-black-outer p-6 rounded-[32px] container-rainbow-main flex flex-col gap-6 animate-in zoom-in-95 duration-500 relative">
-            <div className="flex flex-col gap-2 items-center">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center border mb-2 ${theme === 'light' ? 'bg-black/5 border-black/10' : 'bg-white/5 border-white/10'}`}>
-                <svg className={`w-6 h-6 ${theme === 'light' ? 'text-black/40' : 'text-white/40'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-              </div>
-              <h3 className={`text-base font-normal uppercase tracking-[0.3em] ${theme === 'light' ? 'text-black' : 'text-white'}`}>身份验证</h3>
-              <p className={`text-[12px] uppercase font-normal tracking-tight text-center ${theme === 'light' ? 'text-black/50' : 'text-white/40'}`}>输入秘密协议码以激活超级权限</p>
-            </div>
-            <form onSubmit={handleGmLogin} className="flex flex-col gap-4">
-              <input
-                type="password"
-                placeholder="密码"
-                className={`w-full border rounded-xl px-4 py-3 font-normal outline-none ring-2 ring-transparent transition-all text-center tracking-[0.5em] ${theme === 'light' ? 'bg-black/5 border-black/10 text-black placeholder:text-black/20 focus:ring-black/5' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:ring-white/10'}`}
-                value={gmPassword}
-                onChange={(e) => setGmPassword(e.target.value)}
-                autoFocus
-              />
-              <div className="flex gap-2">
-                <button type="button" onClick={() => { setShowGmPrompt(false); setGmPassword(''); }} className={`flex-1 py-3 font-normal uppercase tracking-tight rounded-xl text-[12px] border ${theme === 'light' ? 'bg-black/5 text-black/50 border-black/5' : 'bg-white/5 text-white/40 border-white/5'}`}>关闭</button>
-                <button type="submit" disabled={isGmLoggingIn} className={`flex-1 py-3 font-normal uppercase tracking-tight rounded-xl text-[12px] transition-all active:scale-95 ${theme === 'light' ? 'bg-black text-white shadow-xl' : 'bg-white text-black shadow-xl'}`}>{isGmLoggingIn ? '验证中...' : '提交'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <GMPrompt
+        show={showGmPrompt}
+        onClose={() => { setShowGmPrompt(false); setGmPassword(''); }}
+        theme={theme}
+        password={gmPassword}
+        setPassword={setGmPassword}
+        isLoggingIn={isGmLoggingIn}
+        onSubmit={handleGmLogin}
+      />
       <div className={`absolute inset-0 z-0 ${isImmersiveMode && isMobile && isChatOpen ? 'hidden' : ''}`}>
         <MapWithNoSSR
           initialPosition={[
@@ -1499,7 +1293,7 @@ export default function Home() {
           unreadCounts={unreadCounts}
           user={currentUser}
           onSendMessage={onSendMessage}
-          onUploadImage={onUploadImage}
+          onUploadImages={onUploadImages}
           onUploadVoice={onUploadVoice}
           onRecallMessage={onRecallMessage}
           fetchLiveStreams={fetchLiveStreams}

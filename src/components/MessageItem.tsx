@@ -41,7 +41,7 @@ export const MessageItem = memo(({
     const isVoice = msg.type === 'voice';
     const isImg = msg.type === 'image';
 
-    const handleMessageClick = (e: React.MouseEvent) => {
+    const handleShowMenu = (e: React.MouseEvent | React.PointerEvent) => {
         if (msg.isRecalled) return;
         e.stopPropagation();
         onSetActiveMenu(msg.id);
@@ -57,6 +57,67 @@ export const MessageItem = memo(({
             </div>
         );
     }
+
+    const renderImages = () => {
+        const urls = msg.content.split(',');
+        const count = urls.length;
+
+        if (count === 1) {
+            return (
+                <div
+                    className={`relative cursor-zoom-in overflow-hidden rounded-[20px] shadow-2xl transition-transform active:scale-[0.98] ${isOwn ? 'bubble-rainbow' : (theme === 'light' ? 'bg-white/40 border-black/5' : 'bg-[#1a1a1a]/40 border-white/5')}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (isActiveMenu) onUnsetActiveMenu();
+                        else onViewImage(urls[0]);
+                    }}
+                    onContextMenu={(e) => { e.preventDefault(); handleShowMenu(e); }}
+                >
+                    <img src={urls[0]} className="w-56 md:w-64 h-auto max-h-[384px] object-cover block" alt="Image 0" />
+                </div>
+            );
+        }
+
+        // Logic for multi-image tiled grid
+        let containerClass = "grid gap-1 p-1 rounded-[24px] overflow-hidden transition-all shadow-2xl w-[260px] md:w-[300px]";
+
+        if (count === 2) containerClass += " grid-cols-2 aspect-[3/2]";
+        else if (count === 3) containerClass += " grid-cols-2 grid-rows-2 aspect-square";
+        else if (count === 4) containerClass += " grid-cols-2 grid-rows-2 aspect-square";
+        else containerClass += " grid-cols-3 aspect-square";
+
+        return (
+            <div className={`${containerClass} ${isOwn ? 'bubble-rainbow' : (theme === 'light' ? 'bg-white/40 backdrop-blur-md border border-black/5' : 'bg-[#1a1a1a]/40 backdrop-blur-md border border-white/5')}`}>
+                {urls.map((url, i) => {
+                    let itemClass = "relative cursor-zoom-in overflow-hidden rounded-[14px] bg-black/5";
+
+                    if (count === 3) {
+                        if (i === 0) itemClass += " row-span-2 h-full";
+                        else itemClass += " h-full";
+                    } else if (count === 2 || count === 4) {
+                        itemClass += " h-full";
+                    } else {
+                        itemClass += " aspect-square";
+                    }
+
+                    return (
+                        <div
+                            key={i}
+                            className={itemClass}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (isActiveMenu) onUnsetActiveMenu();
+                                else onViewImage(url);
+                            }}
+                            onContextMenu={(e) => { e.preventDefault(); handleShowMenu(e); }}
+                        >
+                            <img src={url} loading="lazy" className="w-full h-full object-cover block transition-transform duration-500 hover:scale-105" alt={`Photo ${i}`} />
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
 
     return (
         <div
@@ -102,35 +163,13 @@ export const MessageItem = memo(({
                             <div className="opacity-80 line-clamp-1 truncate max-w-[150px]">{msg.replyTo.content}</div>
                         </div>
                     )}
-                    {isImg ? (
-                        <div
-                            className={`relative cursor-zoom-in rounded-[20px] transition-all shadow-xl p-[1.5px] overflow-hidden ${isOwn ? 'bubble-rainbow' : (theme === 'light' ? 'bg-white/40 backdrop-blur-md border border-black/5 mx-[0.5px]' : 'bg-[#1a1a1a]/40 backdrop-blur-md border border-white/5 mx-[0.5px]')}`}
-                            onClick={(e) => isActiveMenu ? onUnsetActiveMenu() : onViewImage(msg.content)}
-                            onContextMenu={(e) => { e.preventDefault(); handleMessageClick(e); }}
-                            onPointerDown={(e) => {
-                                const timer = setTimeout(() => handleMessageClick(e as any), 600);
-                                const clear = () => clearTimeout(timer);
-                                e.currentTarget.addEventListener('pointerup', clear, { once: true });
-                                e.currentTarget.addEventListener('pointerleave', clear, { once: true });
-                            }}
-                        >
-                            <div className="rounded-[18.5px] overflow-hidden w-20 h-20 md:w-24 md:h-24">
-                                <img src={msg.content} loading="lazy" className="w-full h-full object-cover block" alt="Thumbnail" />
-                            </div>
-                        </div>
-                    ) : (
+                    {isImg ? renderImages() : (
                         <div
                             onClick={(e) => {
                                 if (isActiveMenu) return onUnsetActiveMenu();
                                 if (isVoice) onPlayVoice(msg.content);
                             }}
-                            onContextMenu={(e) => { e.preventDefault(); handleMessageClick(e); }}
-                            onPointerDown={(e) => {
-                                const timer = setTimeout(() => handleMessageClick(e as any), 600);
-                                const clear = () => clearTimeout(timer);
-                                e.currentTarget.addEventListener('pointerup', clear, { once: true });
-                                e.currentTarget.addEventListener('pointerleave', clear, { once: true });
-                            }}
+                            onContextMenu={(e) => { e.preventDefault(); handleShowMenu(e); }}
                             className={`relative px-4 flex-col items-start justify-center min-h-[34px] rounded-[20px] transition-all duration-500 w-fit shadow-xl cursor-pointer active:scale-[0.98] ${isVoice ? 'justify-center min-w-[120px]' : ''} ${isOwn ? `bubble-rainbow ${theme === 'light' ? 'text-gray-900' : 'text-white'}` : (theme === 'light' ? 'bg-white/60 backdrop-blur-md text-black/90 border border-black/5' : 'bg-[#1a1a1a]/40 backdrop-blur-md text-white/90 border border-white/5')}`}
                         >
                             {isVoice ? (
@@ -180,7 +219,7 @@ export const MessageItem = memo(({
                     )}
 
                     {isActiveMenu && (
-                        <div className={`absolute -top-10 ${isOwn ? 'right-0' : 'left-0'} z-50 flex gap-2 animate-in zoom-in-95 fade-in duration-200`}>
+                        <div className={`absolute -top-12 ${isOwn ? 'right-0' : 'left-0'} z-[100] flex gap-1.5 animate-in zoom-in-95 fade-in slide-in-from-bottom-2 duration-300`}>
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -190,7 +229,7 @@ export const MessageItem = memo(({
                                     onQuote({ userName: msg.userName, content });
                                     onUnsetActiveMenu();
                                 }}
-                                className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                                className={`px-4 py-2 rounded-full backdrop-blur-2xl border text-[12px] font-medium tracking-wide transition-all active:scale-95 shadow-[0_10px_30px_rgba(0,0,0,0.3)] ${theme === 'light' ? 'bg-white/80 border-black/5 text-black hover:bg-white' : 'bg-white/10 border-white/10 text-white hover:bg-white/20'}`}
                             >
                                 引用
                             </button>
@@ -208,7 +247,7 @@ export const MessageItem = memo(({
                                     }
                                     onUnsetActiveMenu();
                                 }}
-                                className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                                className={`px-4 py-2 rounded-full backdrop-blur-2xl border text-[12px] font-medium tracking-wide transition-all active:scale-95 shadow-[0_10px_30px_rgba(0,0,0,0.3)] ${theme === 'light' ? 'bg-white/80 border-black/5 text-black hover:bg-white' : 'bg-white/10 border-white/10 text-white hover:bg-white/20'}`}
                             >
                                 复制
                             </button>
@@ -219,7 +258,7 @@ export const MessageItem = memo(({
                                         onRecall(msg.id);
                                         onUnsetActiveMenu();
                                     }}
-                                    className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                                    className={`px-4 py-2 rounded-full backdrop-blur-2xl border text-[12px] font-medium tracking-wide transition-all active:scale-95 shadow-[0_10px_30px_rgba(0,0,0,0.3)] ${theme === 'light' ? 'bg-white/80 border-black/5 text-black hover:bg-white' : 'bg-white/10 border-white/10 text-white hover:bg-white/20'}`}
                                 >
                                     撤回
                                 </button>
@@ -233,7 +272,7 @@ export const MessageItem = memo(({
                                             if (newName && onUpdateName) onUpdateName(msg.userId, newName);
                                             onUnsetActiveMenu();
                                         }}
-                                        className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl bg-amber-500/90 text-white`}
+                                        className={`px-4 py-2 rounded-full backdrop-blur-2xl border text-[12px] font-bold tracking-wide transition-all active:scale-95 shadow-[0_10px_30px_rgba(0,0,0,0.3)] bg-amber-500/80 border-amber-400/20 text-white hover:bg-amber-500`}
                                     >
                                         改名
                                     </button>
@@ -243,7 +282,7 @@ export const MessageItem = memo(({
                                             if (confirm('确定要永久抹除这条记录吗？') && onDelete) onDelete(msg.id);
                                             onUnsetActiveMenu();
                                         }}
-                                        className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl bg-red-500/90 text-white`}
+                                        className={`px-4 py-2 rounded-full backdrop-blur-2xl border text-[12px] font-bold tracking-wide transition-all active:scale-95 shadow-[0_10px_30px_rgba(0,0,0,0.3)] bg-red-500/80 border-red-400/20 text-white hover:bg-red-500`}
                                     >
                                         抹除
                                     </button>
@@ -254,7 +293,7 @@ export const MessageItem = memo(({
                                                 onRecall(msg.id);
                                                 onUnsetActiveMenu();
                                             }}
-                                            className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                                            className={`px-4 py-2 rounded-full backdrop-blur-2xl border text-[12px] font-medium tracking-wide transition-all active:scale-95 shadow-[0_10px_30px_rgba(0,0,0,0.3)] ${theme === 'light' ? 'bg-white/80 border-black/5 text-black hover:bg-white' : 'bg-white/10 border-white/10 text-white hover:bg-white/20'}`}
                                         >
                                             撤回
                                         </button>
