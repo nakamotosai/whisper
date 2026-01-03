@@ -41,10 +41,37 @@ export const MessageItem = memo(({
     const isVoice = msg.type === 'voice';
     const isImg = msg.type === 'image';
 
-    const handleShowMenu = (e: React.MouseEvent | React.PointerEvent) => {
+    const longPressTimer = React.useRef<NodeJS.Timeout | null>(null);
+    const isMoving = React.useRef(false);
+
+    const handleShowMenu = (e: React.MouseEvent | React.PointerEvent | React.TouchEvent) => {
         if (msg.isRecalled) return;
-        e.stopPropagation();
+        if ('stopPropagation' in e) e.stopPropagation();
         onSetActiveMenu(msg.id);
+    };
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        isMoving.current = false;
+        longPressTimer.current = setTimeout(() => {
+            if (!isMoving.current) {
+                handleShowMenu(e);
+            }
+        }, 600);
+    };
+
+    const handleTouchEnd = () => {
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
+    };
+
+    const handleTouchMove = () => {
+        isMoving.current = true;
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
     };
 
     if (msg.isRecalled) {
@@ -72,6 +99,10 @@ export const MessageItem = memo(({
                         else onViewImage(urls[0]);
                     }}
                     onContextMenu={(e) => { e.preventDefault(); handleShowMenu(e); }}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchMove={handleTouchMove}
+                    style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                 >
                     <img src={urls[0]} className="w-56 md:w-64 h-auto max-h-[384px] object-cover block" alt="Image 0" />
                 </div>
@@ -110,6 +141,10 @@ export const MessageItem = memo(({
                                 else onViewImage(url);
                             }}
                             onContextMenu={(e) => { e.preventDefault(); handleShowMenu(e); }}
+                            onTouchStart={handleTouchStart}
+                            onTouchEnd={handleTouchEnd}
+                            onTouchMove={handleTouchMove}
+                            style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                         >
                             <img src={url} loading="lazy" className="w-full h-full object-cover block transition-transform duration-500 hover:scale-105" alt={`Photo ${i}`} />
                         </div>
@@ -170,7 +205,11 @@ export const MessageItem = memo(({
                                 if (isVoice) onPlayVoice(msg.content);
                             }}
                             onContextMenu={(e) => { e.preventDefault(); handleShowMenu(e); }}
-                            className={`relative px-4 flex-col items-start justify-center min-h-[34px] rounded-[20px] transition-all duration-500 w-fit shadow-xl cursor-pointer active:scale-[0.98] ${isVoice ? 'justify-center min-w-[120px]' : ''} ${isOwn ? `bubble-rainbow ${theme === 'light' ? 'text-gray-900' : 'text-white'}` : (theme === 'light' ? 'bg-white/60 backdrop-blur-md text-black/90 border border-black/5' : 'bg-[#1a1a1a]/40 backdrop-blur-md text-white/90 border border-white/5')}`}
+                            onTouchStart={handleTouchStart}
+                            onTouchEnd={handleTouchEnd}
+                            onTouchMove={handleTouchMove}
+                            style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
+                            className={`relative px-4 flex-col items-start justify-center min-h-[34px] rounded-[20px] transition-all duration-500 w-fit shadow-xl cursor-pointer active:scale-[0.98] select-none ${isVoice ? 'justify-center min-w-[120px]' : ''} ${isOwn ? `bubble-rainbow ${theme === 'light' ? 'text-gray-900' : 'text-white'}` : (theme === 'light' ? 'bg-white/60 backdrop-blur-md text-black/90 border border-black/5' : 'bg-[#1a1a1a]/40 backdrop-blur-md text-white/90 border border-white/5')}`}
                         >
                             {isVoice ? (
                                 <div className="flex items-center gap-3 w-full py-2">
