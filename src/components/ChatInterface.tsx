@@ -239,6 +239,31 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         }
     }, [typingUsers.length, activeSubTab]);
 
+    // Handle mobile keyboard resize
+    useEffect(() => {
+        if (!isMobile) return;
+
+        const handleResize = () => {
+            if (activeSubTab === 'CHAT' && inputRef.current && document.activeElement === inputRef.current) {
+                setTimeout(() => {
+                    scrollToBottom('auto');
+                    // Ensure the input field itself is in view (for some browsers that might scroll it off)
+                    inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }, 100);
+            }
+        };
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', handleResize);
+        }
+
+        return () => {
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', handleResize);
+            }
+        };
+    }, [isMobile, activeSubTab]);
+
     const handleScroll = async () => {
         if (!scrollRef.current) return;
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
@@ -399,7 +424,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     return (
         <div
-            className={`flex flex-col h-full w-full overflow-hidden transition-all duration-700 relative crystal-black-outer ${isMobile ? 'rounded-[32px]' : 'rounded-[40px]'} container-rainbow-main ${theme === 'light' ? 'shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)]' : 'shadow-[0_20px_50px_rgba(0,0,0,0.5)]'}`}
+            className={`flex flex-col h-full w-full overflow-hidden transition-[background-color,box-shadow,border-radius] duration-700 relative crystal-black-outer ${isMobile ? 'rounded-[32px]' : 'rounded-[40px]'} container-rainbow-main ${theme === 'light' ? 'shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)]' : 'shadow-[0_20px_50px_rgba(0,0,0,0.5)]'}`}
             style={{ transform: 'translateZ(0)', touchAction: isMobile ? 'pan-y' : 'auto' }}
             onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
             onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
@@ -639,7 +664,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                             onChange={(e) => setInputText(e.target.value)}
                                             onFocus={() => {
                                                 if (isMobile) {
-                                                    setTimeout(() => scrollToBottom('smooth'), 100);
+                                                    // use slight delay to wait for keyboard animation
+                                                    setTimeout(() => {
+                                                        inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                                                        scrollToBottom('smooth');
+                                                    }, 300);
                                                 }
                                             }}
                                             placeholder="..."
