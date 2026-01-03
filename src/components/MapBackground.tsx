@@ -89,11 +89,33 @@ const MapController = ({ center, forcedZoom, onAnimationComplete }: { center: [n
             lastTriggerRef.current = '';
             return;
         }
-        const triggerKey = `${center[0]}_${center[1]}_${forcedZoom}`;
+
+        // Paranoid validation
+        const lat = Number(center?.[0]);
+        const lng = Number(center?.[1]);
+        const zoom = Number(forcedZoom);
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            console.error('MapController: Invalid Lat/Lng', { lat, lng, center });
+            return;
+        }
+
+        if (!Number.isFinite(zoom)) {
+            console.error('MapController: Invalid Zoom', { zoom, forcedZoom });
+            return;
+        }
+
+        const triggerKey = `${lat}_${lng}_${zoom}`;
         if (lastTriggerRef.current === triggerKey) return;
         lastTriggerRef.current = triggerKey;
 
-        map.flyTo(center, forcedZoom, { duration: 1.2, easeLinearity: 0.2 });
+        // Use array literal with validated numbers to ensure no reference issues
+        try {
+            map.flyTo([lat, lng], zoom, { duration: 1.2, easeLinearity: 0.2 });
+        } catch (e) {
+            console.error("MapController flyTo failed", e);
+        }
+
         const timer = setTimeout(() => { onAnimationComplete(); }, 1300);
         return () => clearTimeout(timer);
     }, [forcedZoom, center, map, onAnimationComplete]);

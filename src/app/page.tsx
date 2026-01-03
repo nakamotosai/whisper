@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { ChatInterface } from '@/components/ChatInterface';
 import { PWAInstaller } from '@/components/PWAInstaller';
+import { IdleDimmer } from '@/components/IdleDimmer';
 import { LocationState, ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType, ActivityMarker, RoomStats, UserPresence } from '@/types';
 import { getRoomId, getScaleLevel, getBucket, BUCKET_SIZES, getLocationName, getCountryCode, canJoinHex } from '@/lib/spatialService';
 import { uploadImage, uploadVoice } from '@/lib/r2Storage';
@@ -20,6 +21,7 @@ const MapWithNoSSR = dynamic(
 const GUEST_USER: User = { id: 'guest', avatarSeed: 'default', name: '游客' };
 const CHINA_DEFAULT = { lat: 35.8617, lng: 104.1954, zoom: 5 };
 const JAPAN_DEFAULT = { lat: 36.2048, lng: 138.2529, zoom: 5 };
+const DEFAULT_LOCATION = CHINA_DEFAULT;
 
 const RANDOM_NAMES = [
   // 科技与科幻
@@ -83,6 +85,7 @@ export default function Home() {
   const [viewportHeight, setViewportHeight] = useState('100vh');
   const [fontSize, setFontSize] = useState(16);
   const [reconnectCounter, setReconnectCounter] = useState(0);
+  const [isImmersiveMode, setIsImmersiveMode] = useState(false);
 
   // Chat Panel Resize State
   const [chatWidth, setChatWidth] = useState(360);
@@ -224,9 +227,32 @@ export default function Home() {
     setTimeout(() => {
       setForcedZoom(z);
     }, 100);
-
     localStorage.setItem('whisper_last_location', JSON.stringify(newLocation));
     console.log('Relocated to (fuzzed):', coords, 'zoom:', z);
+  }, []);
+
+  // Safety check for location state
+  useEffect(() => {
+    if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
+      console.warn('Invalid location detected, resetting to default.');
+      setLocation(DEFAULT_LOCATION);
+    }
+  }, [location]);
+
+  // Load saved location on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('whisper_last_location');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Number.isFinite(parsed.lat) && Number.isFinite(parsed.lng)) {
+          setLocation(parsed);
+        }
+      } catch (e) {
+        // ignore invalid json
+      }
+    }
+    setMounted(true);
   }, []);
 
   const handleReturnToUser = useCallback(() => {
@@ -309,6 +335,9 @@ export default function Home() {
 
     const storedWidth = localStorage.getItem('whisper_chat_width');
     if (storedWidth && !isMobile) setChatWidth(parseInt(storedWidth));
+
+    const storedImmersive = localStorage.getItem('whisper_immersive_mode');
+    if (storedImmersive) setIsImmersiveMode(storedImmersive === 'true');
 
     return () => {
       window.removeEventListener('resize', handleResize);
@@ -1189,6 +1218,22 @@ export default function Home() {
                 </div>
               </div>
 
+              {isMobile && (
+                <div
+                  onClick={() => {
+                    const newVal = !isImmersiveMode;
+                    setIsImmersiveMode(newVal);
+                    localStorage.setItem('whisper_immersive_mode', String(newVal));
+                  }}
+                  className={`py-3 px-4 rounded-xl border flex items-center justify-between cursor-pointer transition-all active:scale-95 ${theme === 'light' ? 'bg-black/5 border-black/10' : 'bg-white/5 border-white/10'}`}
+                >
+                  <span className={`text-[11px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>沉浸模式 (隐藏地图)</span>
+                  <div className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${isImmersiveMode ? 'bg-green-500' : (theme === 'light' ? 'bg-black/20' : 'bg-white/20')}`}>
+                    <div className={`absolute top-1 w-3 h-3 rounded-full bg-white shadow-sm transition-all duration-300 ${isImmersiveMode ? 'left-[22px]' : 'left-1'}`} />
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col gap-2 p-1">
                 <div className={`flex items-center justify-between text-[11px] font-normal uppercase tracking-tight px-1 ${theme === 'light' ? 'text-black/60' : 'text-white/40'}`}>
                   <span>文字大小</span>
@@ -1302,9 +1347,12 @@ export default function Home() {
           </div>
         </div>
       )}
-      <div className="absolute inset-0 z-0">
+      <div className={`absolute inset-0 z-0 ${isImmersiveMode && isMobile && isChatOpen ? 'hidden' : ''}`}>
         <MapWithNoSSR
-          initialPosition={[location.lat, location.lng]}
+          initialPosition={[
+            Number.isFinite(location.lat) ? location.lat : 30,
+            Number.isFinite(location.lng) ? location.lng : 120
+          ]}
           userLocation={userGps}
           onLocationChange={onLocationChange}
           onMarkerClick={(m: ActivityMarker) => { setChatAnchor([m.lat, m.lng]); setIsChatOpen(true); }}
@@ -1413,7 +1461,14 @@ export default function Home() {
       )}
       <div
         className={`fixed z-[1000] overflow-hidden ${isResizing ? 'select-none pointer-events-none' : ''} ${isMobile ? '' : 'top-6 right-6 bottom-6 translate-x-0 opacity-100 transition-all duration-1000 ease-[cubic-bezier(0.19,1,0.22,1)]'} ${(!isMobile || isChatOpen) ? 'translate-y-0 opacity-100' : (isMobile ? 'translate-y-[120%] opacity-0' : 'translate-x-[120%] opacity-0')}`}
-        style={isMobile ? {
+        style={isMobile ? (isImmersiveMode ? {
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: 0,
+          transition: 'transform 0.3s ease-out, opacity 0.3s ease-out'
+        } : {
           top: '4vw',
           left: '4vw',
           right: '4vw',
@@ -1421,7 +1476,7 @@ export default function Home() {
           borderRadius: '32px',
           boxShadow: theme === 'light' ? '0 20px 60px -15px rgba(0,0,0,0.1)' : '0 20px 50px rgba(0,0,0,0.5)',
           transition: 'transform 0.3s ease-out, opacity 0.3s ease-out'
-        } : {
+        }) : {
           width: `${chatWidth}px`,
           borderRadius: '40px',
           boxShadow: theme === 'light' ? '0 20px 60px -15px rgba(0,0,0,0.1)' : '0 20px 50px rgba(0,0,0,0.5)',
@@ -1473,8 +1528,10 @@ export default function Home() {
           onRead={onRead}
           onlineUsers={onlineUsers[activeScale]}
           currentUserId={currentUser.id}
+          isImmersive={isImmersiveMode && isMobile}
         />
         <PWAInstaller theme={theme} />
+        <IdleDimmer />
       </div>
       <style>{`
                 .crystal-nav-vertical { position: relative; background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.45)' : 'rgba(28, 28, 28, 0.5)'}; backdrop-filter: blur(16px); border-radius: 20px; border: 1.5px solid transparent; }

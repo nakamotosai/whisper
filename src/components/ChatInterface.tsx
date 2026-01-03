@@ -49,6 +49,7 @@ interface ChatInterfaceProps {
     onRead?: (timestamp: number) => void;
     onlineUsers?: UserPresence[];
     currentUserId?: string;
+    isImmersive?: boolean;
 }
 
 const SCALE_OPTIONS_TRANS = { WORLD: '世界', CITY: '城市', DISTRICT: '地区' };
@@ -59,7 +60,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     fetchLiveStreams, fetchSharedImages, isOpen, onToggle, onTabChange, onUpdateUser, onOpenSettings, isMobile = false, locationName, theme = 'dark', onlineCounts,
     onLoadMore, hasMore = false, onDeleteMessage, onUpdateAnyUserName, fontSize = 16,
     mentionCounts = { [ScaleLevel.DISTRICT]: 0, [ScaleLevel.CITY]: 0, [ScaleLevel.WORLD]: 0 },
-    onTyping, typingUsers = [], onRead, onlineUsers = [], currentUserId
+    onTyping, typingUsers = [], onRead, onlineUsers = [], currentUserId, isImmersive = false
 }) => {
     // Cumulative read status map: userId -> maxReadTimestamp
     const [readStatusMap, setReadStatusMap] = useState<Record<string, number>>({});
@@ -442,9 +443,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         if (onUpdateAnyUserName) onUpdateAnyUserName(id, name);
     }, [onUpdateAnyUserName]);
 
+    const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+
     return (
         <div
-            className={`flex flex-col h-full w-full overflow-hidden transition-[background-color,box-shadow,border-radius] duration-700 relative crystal-black-outer ${isMobile ? 'rounded-[32px]' : 'rounded-[40px]'} container-rainbow-main ${theme === 'light' ? 'shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)]' : 'shadow-[0_20px_50px_rgba(0,0,0,0.5)]'}`}
+            className={`flex flex-col h-full w-full overflow-hidden transition-[background-color,box-shadow,border-radius] duration-700 relative crystal-black-outer ${isMobile && isImmersive ? 'rounded-none order-0' : (isMobile ? 'rounded-[32px]' : 'rounded-[40px]')} ${!isImmersive ? 'container-rainbow-main' : ''} ${theme === 'light' ? 'shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)]' : 'shadow-[0_20px_50px_rgba(0,0,0,0.5)]'}`}
             style={{ transform: 'translateZ(0)', touchAction: isMobile ? 'pan-y' : 'auto' }}
             onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
             onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
@@ -527,7 +530,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 {activeSubTab === 'CHAT' && (
                     <div className="flex flex-col-reverse relative">
                         {/* Newest messages at the bottom visually (start of flex-col-reverse list) */}
-                        {useMemo(() => [...messages].reverse(), [messages]).map((msg, reversedIndex) => {
+                        {reversedMessages.map((msg, reversedIndex) => {
                             const index = messages.length - 1 - reversedIndex;
                             const prevMsg = index > 0 ? messages[index - 1] : null;
                             const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;

@@ -194,6 +194,24 @@ export const MessageItem = memo(({
                             >
                                 引用
                             </button>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (msg.type === 'text') {
+                                        navigator.clipboard.writeText(msg.content).then(() => {
+                                            alert('已复制到剪贴板');
+                                        }).catch(() => {
+                                            alert('复制失败');
+                                        });
+                                    } else {
+                                        alert('仅支持复制文字消息');
+                                    }
+                                    onUnsetActiveMenu();
+                                }}
+                                className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                            >
+                                复制
+                            </button>
                             {isOwn && (Date.now() - msg.timestamp < 30 * 60 * 1000) && (
                                 <button
                                     onClick={(e) => {
