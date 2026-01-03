@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -72,6 +73,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const [galleryImages, setGalleryImages] = useState<SharedImage[]>([]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
+    const virtualizer = useVirtualizer({
+        count: messages.length,
+        getScrollElement: () => scrollRef.current,
+        estimateSize: () => 80,
+        overscan: 5,
+    });
     const fileInputRef = useRef<HTMLInputElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -389,12 +396,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2 group cursor-default px-1 h-3">
-                    <div className="w-1 h-1 rounded-full bg-[#818cf8] shadow-[0_0_8px_#818cf8] animate-pulse" />
+                    <div className="w-1 h-1 rounded-full bg-[#818cf8] shadow-[0_0_8px_#818cf8]" />
                     <span className={`text-[9px] uppercase font-normal tracking-[0.2em] transition-colors ${theme === 'light' ? 'text-black/40 group-hover:text-black/60' : 'text-white/50 group-hover:text-white/70'}`}>{locationName || 'BROADCAST_READY'}</span>
                     {onlineCounts && onlineCounts[scale] > 0 && (
                         <div className="flex items-center gap-2 ml-4">
-                            <div className="w-1 h-1 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)] animate-pulse" />
-                            <span className={`text-[11px] font-bold tracking-wider ${theme === 'light' ? 'text-black/30' : 'text-white/30'}`}>当前在线人数：<span className="text-green-400 animate-pulse">{onlineCounts[scale]}</span></span>
+                            <div className="w-1 h-1 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]" />
+                            <span className={`text-[11px] font-bold tracking-wider ${theme === 'light' ? 'text-black/30' : 'text-white/30'}`}>当前在线人数：<span className="text-green-400">{onlineCounts[scale]}</span></span>
                         </div>
                     )}
                 </div>
@@ -411,7 +418,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 }}
             >
                 {activeSubTab === 'CHAT' && (
-                    <div className="flex flex-col gap-1.5 pb-4">
+                    <div className="relative" style={{ height: `${virtualizer.getTotalSize()}px` }}>
                         {hasMore && (
                             <div className="flex justify-center py-4">
                                 {isLoadingMore ? (
@@ -431,7 +438,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             </div>
                         )}
 
-                        {messages.map((msg, index) => {
+                        {virtualizer.getVirtualItems().map((virtualRow) => {
+                            const index = virtualRow.index;
+                            const msg = messages[index];
                             const isOwn = msg.userId === user.id;
                             const prevMsg = index > 0 ? messages[index - 1] : null;
                             const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
@@ -444,7 +453,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                             if (msg.isRecalled) {
                                 return (
-                                    <div key={msg.id} className="flex justify-center my-1 animate-in fade-in duration-500">
+                                    <div
+                                        key={virtualRow.key}
+                                        data-index={index}
+                                        ref={virtualizer.measureElement}
+                                        className="absolute left-0 right-0 px-6 flex justify-center my-1"
+                                        style={{ transform: `translateY(${virtualRow.start}px)` }}
+                                    >
                                         <span className={`text-[12px] bg-black/5 ${theme === 'light' ? 'text-black/50' : 'text-white/40'} px-3 py-1 rounded-full flex items-center gap-1.5`}>
                                             <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                             {isOwn ? '你撤回了一条消息' : `${msg.userName} 撤回了一条消息`}
@@ -454,7 +469,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             }
 
                             return (
-                                <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-700 ${isFirstInGroup ? 'mt-3' : 'mt-1'}`}>
+                                <div
+                                    key={virtualRow.key}
+                                    data-index={index}
+                                    ref={virtualizer.measureElement}
+                                    className={`absolute left-0 right-0 px-6 flex flex-col ${isOwn ? 'items-end' : 'items-start'} ${isFirstInGroup ? 'pt-3' : 'pt-1'}`}
+                                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                                >
                                     {isFirstInGroup && (
                                         <div className={`mb-1 px-1 text-[11px] font-normal uppercase tracking-tighter flex items-center gap-1.5 ${isOwn ? (theme === 'light' ? 'text-black/60' : 'text-white/55') : (theme === 'light' ? 'text-black/50' : 'text-white/40')}`}>
                                             <span
@@ -506,7 +527,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                 }}
                                             >
                                                 <div className="rounded-[18.5px] overflow-hidden w-20 h-20 md:w-24 md:h-24">
-                                                    <img src={msg.content} className="w-full h-full object-cover block" alt="Thumbnail" />
+                                                    <img src={msg.content} loading="lazy" className="w-full h-full object-cover block" alt="Thumbnail" />
                                                 </div>
                                             </div>
                                         ) : (
@@ -649,7 +670,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 {activeSubTab === 'IMAGES' && (
                     <div className="grid grid-cols-3 gap-2 pb-8 animate-in fade-in duration-700">
                         {galleryImages.map((msg, i) => (
-                            <img key={msg.id} src={msg.url} onClick={() => setViewerIndex(i)} className="w-full aspect-square object-cover rounded-[16px] cursor-zoom-in border border-white/5 hover:border-white/20 hover:scale-[1.02] transition-all duration-500 shadow-xl" alt="Gallery" />
+                            <img key={msg.id} src={msg.url} loading="lazy" onClick={() => setViewerIndex(i)} className="w-full aspect-square object-cover rounded-[16px] cursor-zoom-in border border-white/5 hover:border-white/20 hover:scale-[1.02] transition-all duration-500 shadow-xl" alt="Gallery" />
                         ))}
                     </div>
                 )}
@@ -662,9 +683,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         onClick={() => scrollToBottom('smooth')}
                         className={`pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-2xl border shadow-[0_10px_30px_rgba(0,0,0,0.3)] transition-all active:scale-95 ${theme === 'light' ? 'bg-white/90 border-black/5 text-black' : 'bg-black/80 border-white/10 text-white'}`}
                     >
-                        <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+                        <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
                         <span className="text-[11px] font-normal tracking-tight uppercase">有新信息</span>
-                        <svg className="w-3.5 h-3.5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7-7-7" />
                         </svg>
                     </button>
@@ -676,9 +697,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     {typingUsers.length > 0 && (
                         <div className="px-4 flex items-center gap-2 mb-1.5 animate-in fade-in slide-in-from-bottom-1 duration-500">
                             <div className="flex gap-1 items-center py-1">
-                                <div className="w-1 h-1 rounded-full bg-white/40 animate-bounce" />
-                                <div className="w-1 h-1 rounded-full bg-white/40 animate-bounce [animation-delay:0.2s]" />
-                                <div className="w-1 h-1 rounded-full bg-white/40 animate-bounce [animation-delay:0.4s]" />
+                                <div className="w-1 h-1 rounded-full bg-white/40" />
+                                <div className="w-1 h-1 rounded-full bg-white/40" />
+                                <div className="w-1 h-1 rounded-full bg-white/40" />
                             </div>
                             <span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/30' : 'text-white/30'}`}>
                                 {typingUsers.length === 1 ? `${typingUsers[0]} 正在输入...` : '多人正在输入...'}
@@ -769,7 +790,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                     </div>
                                 </form>
                             ) : (
-                                <button onPointerDown={(e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (e) { } startRecording(); }} onPointerUp={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} onPointerCancel={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} className={`flex-1 h-7 rounded-full font-normal tracking-[0.1em] text-[12px] uppercase transition-all select-none touch-none flex items-center justify-center ${isRecording ? 'bg-white text-black animate-pulse scale-[0.98]' : (theme === 'light' ? 'bg-black/5 text-black/20 hover:bg-black/10' : 'bg-white/5 text-white/40 hover:bg-white/10')}`}>
+                                <button onPointerDown={(e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (e) { } startRecording(); }} onPointerUp={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} onPointerCancel={(e) => { e.preventDefault(); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (e) { } stopRecording(); }} className={`flex-1 h-7 rounded-full font-normal tracking-[0.1em] text-[12px] uppercase transition-all select-none touch-none flex items-center justify-center ${isRecording ? 'bg-white text-black scale-[0.98]' : (theme === 'light' ? 'bg-black/5 text-black/20 hover:bg-black/10' : 'bg-white/5 text-white/40 hover:bg-white/10')}`}>
                                     {isRecording ? '松开发送' : '按住说话'}
                                 </button>
                             )}
@@ -786,8 +807,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             {viewerIndex !== null && typeof document !== 'undefined' && (
                 <div className={`fixed inset-0 z-[99999] flex flex-col transition-all duration-500 backdrop-blur-3xl ${theme === 'light' ? 'bg-white/90' : 'bg-black/80'}`} onClick={() => setViewerIndex(null)}>
                     <div className="absolute top-6 right-6 z-[120] pointer-events-auto">
-                        <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border shadow-2xl ${theme === 'light' ? 'bg-black/10 hover:bg-black text-black/60 hover:text-white border-black/10' : 'bg-white/10 hover:bg-white text-white/60 hover:text-black border-white/10'}`}>
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className="w-10 h-10 rounded-full flex items-center justify-center transition-all bg-black/50 hover:bg-black/70 text-white border border-white/10 shadow-2xl backdrop-blur-md">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                     </div>
 

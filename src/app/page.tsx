@@ -22,6 +22,7 @@ const CHINA_DEFAULT = { lat: 35.8617, lng: 104.1954, zoom: 5 };
 const JAPAN_DEFAULT = { lat: 36.2048, lng: 138.2529, zoom: 5 };
 
 const RANDOM_NAMES = ['流浪的小星', '极光行者', '深海潜航', '赛博诗人', '夜幕幽灵', '霓虹信使', '虚空观察者', '重力叛逆者', '光速速递', '量子纠缠', '云端漫步', '像素浪人', '磁卡狂热', '电子蝴蝶', '光谱漫游', '暗物质', '临界点', '高维度', '波函数', '奇点降临'];
+const MAX_MESSAGES = 200; // 内存中最多保留的消息数量，超出时移除最旧的消息
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -621,7 +622,11 @@ export default function Home() {
 
     const channel = supabase!.channel(`room_${rid}`)
       .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
-        setAllMessages(prev => prev[scale].some(m => m.id === payload.id) ? prev : { ...prev, [scale]: [...prev[scale], payload] });
+        setAllMessages(prev => {
+          if (prev[scale].some(m => m.id === payload.id)) return prev;
+          const updated = [...prev[scale], payload].slice(-MAX_MESSAGES);
+          return { ...prev, [scale]: updated };
+        });
         if (scale !== activeScaleRef.current) {
           setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
           if (payload.content.includes(`@${currentUserRef.current.name}`)) {
@@ -678,7 +683,11 @@ export default function Home() {
 
     const channel = supabase!.channel(`room_${rid}`)
       .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
-        setAllMessages(prev => prev[scale].some(m => m.id === payload.id) ? prev : { ...prev, [scale]: [...prev[scale], payload] });
+        setAllMessages(prev => {
+          if (prev[scale].some(m => m.id === payload.id)) return prev;
+          const updated = [...prev[scale], payload].slice(-MAX_MESSAGES);
+          return { ...prev, [scale]: updated };
+        });
         if (scale !== activeScaleRef.current) {
           setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
           if (payload.content.includes(`@${currentUserRef.current.name}`)) {
@@ -733,7 +742,11 @@ export default function Home() {
 
     const channel = supabase!.channel(`room_${rid}`)
       .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
-        setAllMessages(prev => prev[scale].some(m => m.id === payload.id) ? prev : { ...prev, [scale]: [...prev[scale], payload] });
+        setAllMessages(prev => {
+          if (prev[scale].some(m => m.id === payload.id)) return prev;
+          const updated = [...prev[scale], payload].slice(-MAX_MESSAGES);
+          return { ...prev, [scale]: updated };
+        });
         if (scale !== activeScaleRef.current) {
           setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
           if (payload.content.includes(`@${currentUserRef.current.name}`)) {
