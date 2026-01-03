@@ -33,7 +33,8 @@ export const useGMLogic = (
     setCurrentUser: React.Dispatch<React.SetStateAction<User>>,
     setTempName: (name: string) => void,
     setShowUnifiedSettings: (show: boolean) => void,
-    onlineUsers: Record<ScaleLevel, UserPresence[]>
+    onlineUsers: Record<ScaleLevel, UserPresence[]>,
+    userIp: string | null
 ) => {
     const [gmClickCount, setGmClickCount] = useState(0);
     const [gmClickTimer, setGmClickTimer] = useState<NodeJS.Timeout | null>(null);
@@ -89,19 +90,20 @@ export const useGMLogic = (
             // Set GM Status
             const gmUser: User = {
                 ...currentUser,
-                name: '老蔡',
                 isGM: true
             };
 
             setCurrentUser(gmUser);
-            localStorage.setItem('whisper_user_name', '老蔡');
 
-            // Update site_settings
-            await supabase.from('site_settings').upsert({ key: 'gm_active_user_id', value_text: currentUser.id, updated_at: new Date().toISOString() });
+            // Update site_settings: Bind this UserID and this IP
+            await supabase.from('site_settings').upsert([
+                { key: 'gm_active_user_id', value_text: currentUser.id, updated_at: new Date().toISOString() },
+                { key: 'authorized_gm_ip', value_text: userIp, updated_at: new Date().toISOString() }
+            ]);
 
             setShowGmPrompt(false);
             setGmPassword('');
-            alert('超级权限已激活，指挥官。');
+            alert('超级权限已激活。当前设备 IP 已被授权为指挥官权限，从此 IP 登录的任何代号均将自动获得 GM 身份。');
         } catch (err) {
             console.error('GM Login Error:', err);
         } finally {

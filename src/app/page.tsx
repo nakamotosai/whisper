@@ -85,6 +85,7 @@ export default function Home() {
   const [fontSize, setFontSize] = useState(16);
   const [reconnectCounter, setReconnectCounter] = useState(0);
   const [isImmersiveMode, setIsImmersiveMode] = useState(false);
+  const [userIp, setUserIp] = useState<string | null>(null);
 
   // Chat Panel Resize State
   const [chatWidth, setChatWidth] = useState(360);
@@ -128,7 +129,7 @@ export default function Home() {
   const {
     gmClickCount, showGmPrompt, setShowGmPrompt, gmPassword, setGmPassword, isGmLoggingIn,
     handleLogoClick, handleGmLogin, handleLogoutGM
-  } = useGMLogic(currentUser, setCurrentUser, setTempName, setShowUnifiedSettings, onlineUsers);
+  } = useGMLogic(currentUser, setCurrentUser, setTempName, setShowUnifiedSettings, onlineUsers, userIp);
 
   const {
     showSuggestionPanel, setShowSuggestionPanel, suggestionText, setSuggestionText,
@@ -186,13 +187,13 @@ export default function Home() {
     return { ...CHINA_DEFAULT, countryCode: 'CN' };
   }, []);
 
-  const fetchCountryByIP = async (): Promise<string | null> => {
+  const fetchIPInfo = async (): Promise<{ ip: string | null, countryCode: string | null }> => {
     // Try ipapi.co first
     try {
       const res = await fetch('https://ipapi.co/json/');
       if (res.ok) {
         const data = await res.json();
-        if (data.country_code) return data.country_code;
+        return { ip: data.ip || null, countryCode: data.country_code || null };
       }
     } catch (err) { }
 
@@ -201,11 +202,11 @@ export default function Home() {
       const res = await fetch('http://ip-api.com/json/');
       if (res.ok) {
         const data = await res.json();
-        if (data.countryCode) return data.countryCode;
+        return { ip: data.query || null, countryCode: data.countryCode || null };
       }
     } catch (err) { }
 
-    return null;
+    return { ip: null, countryCode: null };
   };
 
   const fuzzCoordinates = useCallback((lat: number, lng: number): [number, number] => {
@@ -299,9 +300,16 @@ export default function Home() {
       ...prev,
       id,
       avatarSeed: seed,
-      name: storedName || '游客',
+      name: (storedName && storedName !== '老蔡') ? storedName : '游客', // Forbid "老蔡" from previous session
       countryCode: prev.countryCode || (smartLoc as any).countryCode // Initial fallback from timezone
     }));
+
+    fetchIPInfo().then(({ ip, countryCode }) => {
+      setUserIp(ip);
+      if (countryCode) {
+        setCurrentUser(prev => ({ ...prev, countryCode }));
+      }
+    });
 
     if (!storedName) setShowUnifiedSettings(true);
 
@@ -388,36 +396,43 @@ export default function Home() {
     getLocationName(chatAnchor[0], chatAnchor[1], activeScale).then(setLocationName);
   }, [chatAnchor, mounted, activeScale]);
 
-  // GM Identity Verification & Session Persistence
+  // GM Identity Verification & IP-Based Auth
   useEffect(() => {
-    if (!mounted || !supabase) return;
+    if (!mounted || !supabase || !userIp) return;
 
     const verifyGM = async () => {
-      // If user's name is "老蔡", they MUST be the active GM in the database
-      if (currentUser.name === '老蔡') {
-        try {
-          const { data } = await supabase!.from('site_settings').select('value_text').eq('key', 'gm_active_user_id').single();
-          if (data?.value_text === currentUser.id) {
-            // Valid GM - Ensure isGM flag is active
-            if (!currentUser.isGM) {
-              setCurrentUser(prev => ({ ...prev, isGM: true }));
-            }
+      try {
+        const { data: settings } = await supabase!.from('site_settings').select('*').in('key', ['gm_active_user_id', 'authorized_gm_ip']);
+        const authIp = settings?.find(s => s.key === 'authorized_gm_ip')?.value_text;
+        const authId = settings?.find(s => s.key === 'gm_active_user_id')?.value_text;
+
+        // IP AUTH TAKES PRECEDENCE: If current IP matches authorized GM IP, grant GM status
+        if (authIp && userIp === authIp) {
+          if (!currentUser.isGM) {
+            setCurrentUser(prev => ({ ...prev, isGM: true }));
+            console.log('GM status granted by IP authorization.');
+          }
+          return;
+        }
+
+        // Secondary check for legacy/ID session if username is "老蔡" (to be deprecated or used as fallback)
+        if (currentUser.name === '老蔡') {
+          if (authId === currentUser.id) {
+            if (!currentUser.isGM) setCurrentUser(prev => ({ ...prev, isGM: true }));
           } else {
-            // IMPERSONATION DETECTED: Someone else has the name "老蔡" in localStorage
-            // or the GM session has been taken over by another device.
             const newName = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
             setCurrentUser(prev => ({ ...prev, name: newName, isGM: false }));
             localStorage.setItem('whisper_user_name', newName);
-            console.warn('Unauthorized GM identity detected and reset.');
+            console.warn('Unauthorized name "老蔡" detected and reset.');
           }
-        } catch (err) {
-          console.error('GM verification error:', err);
         }
+      } catch (err) {
+        console.error('GM verification error:', err);
       }
     };
 
     verifyGM();
-  }, [mounted, currentUser.id, currentUser.name, currentUser.isGM]);
+  }, [mounted, currentUser.id, currentUser.name, currentUser.isGM, userIp]);
 
   useEffect(() => {
     if (mounted) {
@@ -835,9 +850,9 @@ export default function Home() {
       return;
     }
 
-    // Reserve "老蔡" for GM
-    if (finalName === '老蔡' && !currentUser.isGM) {
-      alert('此代号受保护，请选择其他代号。');
+    // Strictly forbid "老蔡" for all users
+    if (finalName === '老蔡' || finalName.includes('老蔡')) {
+      alert('禁止使用包含“老蔡”的名称。');
       return;
     }
 
