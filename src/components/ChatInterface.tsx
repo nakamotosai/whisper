@@ -117,27 +117,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }, [activeSubTab, roomId, fetchSharedImages]);
 
     useEffect(() => {
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg && (lastMsg.type === 'image' || lastMsg.content.includes('chat_images'))) {
-            if (!galleryImages.some(img => img.id === lastMsg.id)) {
-                setGalleryImages(prev => [{
-                    id: lastMsg.id,
-                    url: lastMsg.content,
-                    caption: '',
-                    author: lastMsg.userName,
-                    likes: 0,
-                    lat: 0,
-                    lng: 0,
-                    timestamp: lastMsg.timestamp
-                }, ...prev]);
-            }
-        }
+        const chatImages = messages
+            .filter(m => m.type === 'image' || m.content.includes('chat_images'))
+            .map(m => ({
+                id: m.id,
+                url: m.content,
+                caption: '',
+                author: m.userName,
+                likes: 0,
+                lat: 0,
+                lng: 0,
+                timestamp: m.timestamp
+            }));
+
+        setGalleryImages(prev => {
+            const existingIds = new Set(prev.map(img => img.id));
+            const newImages = chatImages.filter(img => !existingIds.has(img.id));
+            if (newImages.length === 0) return prev;
+            // 将新消息图片加到前面
+            return [...newImages.reverse(), ...prev];
+        });
     }, [messages]);
 
     useEffect(() => {
         if (activeSubTab === 'CHAT' && scrollRef.current && isOpen) {
             const container = scrollRef.current;
-            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 250;
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
 
             const currentLastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
             const currentLastId = currentLastMsg?.id || null;
@@ -323,7 +328,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     const openViewer = (url: string) => {
         const idx = galleryImages.findIndex(item => item.url === url);
-        if (idx !== -1) setViewerIndex(idx);
+        if (idx !== -1) {
+            setViewerIndex(idx);
+        } else {
+            // 如果不在 galleryImages 中，尝试从当前消息中构建一个临时的
+            const msg = messages.find(m => m.content === url);
+            if (msg) {
+                const newImg: SharedImage = {
+                    id: msg.id,
+                    url: msg.content,
+                    caption: '',
+                    author: msg.userName,
+                    likes: 0,
+                    lat: 0,
+                    lng: 0,
+                    timestamp: msg.timestamp
+                };
+                setGalleryImages(prev => [newImg, ...prev]);
+                setViewerIndex(0);
+            }
+        }
     };
 
 
@@ -408,7 +432,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
 
             <div
-                className="flex-1 min-h-0 overflow-y-auto px-6 py-2 scrollbar-hide relative overscroll-contain touch-pan-y"
+                className="flex-1 min-h-0 overflow-y-auto px-2 py-2 scrollbar-hide relative overscroll-contain touch-pan-y"
                 ref={scrollRef}
                 onScroll={handleScroll}
                 style={{
@@ -457,7 +481,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         key={virtualRow.key}
                                         data-index={index}
                                         ref={virtualizer.measureElement}
-                                        className="absolute left-0 right-0 px-6 flex justify-center my-1"
+                                        className="absolute left-0 right-0 px-2 flex justify-center my-1"
                                         style={{ transform: `translateY(${virtualRow.start}px)` }}
                                     >
                                         <span className={`text-[12px] bg-black/5 ${theme === 'light' ? 'text-black/50' : 'text-white/40'} px-3 py-1 rounded-full flex items-center gap-1.5`}>
@@ -473,7 +497,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                     key={virtualRow.key}
                                     data-index={index}
                                     ref={virtualizer.measureElement}
-                                    className={`absolute left-0 right-0 px-6 flex flex-col ${isOwn ? 'items-end' : 'items-start'} ${isFirstInGroup ? 'pt-3' : 'pt-1'}`}
+                                    className={`absolute left-0 right-0 px-2 flex flex-col ${isOwn ? 'items-end' : 'items-start'} ${isFirstInGroup ? 'pt-3' : 'pt-1'}`}
                                     style={{ transform: `translateY(${virtualRow.start}px)` }}
                                 >
                                     {isFirstInGroup && (
@@ -807,7 +831,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             {viewerIndex !== null && typeof document !== 'undefined' && (
                 <div className={`fixed inset-0 z-[99999] flex flex-col transition-all duration-500 backdrop-blur-3xl ${theme === 'light' ? 'bg-white/90' : 'bg-black/80'}`} onClick={() => setViewerIndex(null)}>
                     <div className="absolute top-6 right-6 z-[120] pointer-events-auto">
-                        <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className="w-10 h-10 rounded-full flex items-center justify-center transition-all bg-black/50 hover:bg-black/70 text-white border border-white/10 shadow-2xl backdrop-blur-md">
+                        <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border shadow-2xl backdrop-blur-xl ${theme === 'light' ? 'bg-black/80 text-white border-white/20 hover:bg-black' : 'bg-white/10 text-white border-white/20 hover:bg-white/20'}`}>
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                     </div>
