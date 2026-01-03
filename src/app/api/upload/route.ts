@@ -6,7 +6,7 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NextRequest, NextResponse } from 'next/server';
 
-// export const runtime = 'edge';
+export const runtime = 'edge';
 
 // Initialize S3 client for R2
 const getR2Client = () => {
