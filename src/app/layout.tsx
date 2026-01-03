@@ -12,6 +12,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+import VersionManager from "@/components/VersionManager";
+
 export const metadata: Metadata = {
   title: "乌托邦 | UTOPIA",
   description: "全球匿名实时聊天室 - Privacy secured with 2km random offset",
@@ -37,6 +39,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({
@@ -54,6 +57,7 @@ export default function RootLayout({
         style={{ position: 'fixed', overflow: 'hidden', width: '100%', height: '100%', background: 'black' }}
         suppressHydrationWarning
       >
+        <VersionManager />
         {children}
       </body>
     </html>

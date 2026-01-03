@@ -6,7 +6,7 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'edge';
+// export const runtime = 'edge';
 
 // Initialize S3 client for R2
 const getR2Client = () => {
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Validate file size (10MB for images, 5MB for voice)
-        const maxSize = fileType === 'voice' ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+        const maxSize = fileType === 'voice' ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
         if (file.size > maxSize) {
             return NextResponse.json({ error: 'File too large' }, { status: 413 });
         }

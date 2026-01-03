@@ -8,12 +8,7 @@
 CREATE OR REPLACE FUNCTION delete_old_messages()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- 1. 首先删除当前房间内超过 24 小时的消息
-    DELETE FROM messages
-    WHERE room_id = NEW.room_id
-    AND timestamp < NOW() - INTERVAL '1 day';
-
-    -- 2. 然后检查消息数量是否超过 1000 条
+    -- 仅检查消息数量是否超过 1000 条
     -- 如果超过，保留最新的 1000 条，删除其余的
     DELETE FROM messages
     WHERE id IN (

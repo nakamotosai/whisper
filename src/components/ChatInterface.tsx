@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -78,6 +79,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         getScrollElement: () => scrollRef.current,
         estimateSize: () => 80,
         overscan: 5,
+        // getItemKey: (index) => messages[index]?.id || index,
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -108,13 +110,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         }
     };
 
+    const fetchSharedImagesRef = useRef(fetchSharedImages);
+    useEffect(() => { fetchSharedImagesRef.current = fetchSharedImages; });
+
     useEffect(() => {
         if (activeSubTab === 'IMAGES' && roomId) {
-            fetchSharedImages(roomId).then(setGalleryImages);
+            fetchSharedImagesRef.current(roomId).then(setGalleryImages);
         } else if (roomId !== lastRoomId.current) {
             setGalleryImages([]);
         }
-    }, [activeSubTab, roomId, fetchSharedImages]);
+    }, [activeSubTab, roomId]);
 
     useEffect(() => {
         const chatImages = messages
@@ -142,7 +147,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     useEffect(() => {
         if (activeSubTab === 'CHAT' && scrollRef.current && isOpen) {
             const container = scrollRef.current;
-            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 300;
 
             const currentLastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
             const currentLastId = currentLastMsg?.id || null;
@@ -190,7 +195,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         } else {
             lastSubTab.current = activeSubTab;
         }
-    }, [messages, isOpen, activeSubTab, scale, roomId]);
+    }, [messages.length, messages[messages.length - 1]?.id, isOpen, activeSubTab, scale, roomId]);
 
     useEffect(() => {
         const handleClickOutside = () => {
@@ -221,6 +226,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             onTyping(false);
         }
     }, [inputText, isOpen, onTyping]);
+
+    // 当有人正在输入时，如果用户在底部，自动调整滚动平衡
+    useEffect(() => {
+        if (activeSubTab === 'CHAT' && typingUsers.length > 0 && scrollRef.current) {
+            const container = scrollRef.current;
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+            if (isNearBottom) {
+                scrollToBottom('smooth');
+            }
+        }
+    }, [typingUsers.length, activeSubTab]);
 
     const handleScroll = async () => {
         if (!scrollRef.current) return;
@@ -369,7 +385,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <div className={`absolute inset-0 transition-colors duration-700 ${theme === 'light' ? 'bg-white/20' : 'bg-black/10'}`} />
             </div>
 
-            <div className={`shrink-0 z-30 transition-all duration-500 ${isMobile ? 'p-4 pt-1' : 'p-6 pt-1'} flex flex-col gap-2`}>
+            <div className={`shrink-0 z-30 transition-all duration-500 ${isMobile ? 'p-4 pt-3' : 'p-6 pt-1'} flex flex-col gap-2`}>
                 <div className="flex items-center justify-between">
                     <div className={`flex-1 flex items-center backdrop-blur-md p-1 h-9 rounded-[18px] border transition-colors ${theme === 'light' ? 'bg-white/40 border-black/5' : 'bg-[#1a1a1a]/50 border-white/5'}`}>
                         {[{ label: '世界', value: ScaleLevel.WORLD }, { label: '城市', value: ScaleLevel.CITY }, { label: '地区', value: ScaleLevel.DISTRICT }].map(tab => {
@@ -698,7 +714,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         ))}
                     </div>
                 )}
-                <div className="h-6" />
+                <div className={`${isMobile ? 'h-24' : 'h-32'} shrink-0 pointer-events-none`} />
             </div>
 
             {showNewMessageTip && activeSubTab === 'CHAT' && (
@@ -717,19 +733,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             )}
 
             {activeSubTab === 'CHAT' && (
-                <div className={`shrink-0 z-20 ${isMobile ? 'px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))]' : 'p-6 pt-1'}`}>
-                    {typingUsers.length > 0 && (
-                        <div className="px-4 flex items-center gap-2 mb-1.5 animate-in fade-in slide-in-from-bottom-1 duration-500">
-                            <div className="flex gap-1 items-center py-1">
-                                <div className="w-1 h-1 rounded-full bg-white/40" />
-                                <div className="w-1 h-1 rounded-full bg-white/40" />
-                                <div className="w-1 h-1 rounded-full bg-white/40" />
+                <div className={`shrink-0 z-20 ${isMobile ? 'px-3 pt-2 pb-3' : 'p-6 pt-1'}`}>
+                    <div className="h-6 mb-1 px-4 flex items-center gap-2 overflow-hidden">
+                        {typingUsers.length > 0 && (
+                            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-1 duration-500">
+                                <div className="flex gap-1 items-center py-1">
+                                    {[1, 2, 3].map(i => (
+                                        <div key={i} className={`w-1 h-1 rounded-full ${theme === 'light' ? 'bg-black/20' : 'bg-white/40'} animate-pulse`} style={{ animationDelay: `${i * 0.2}s` }} />
+                                    ))}
+                                </div>
+                                <span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/30' : 'text-white/30'}`}>
+                                    {typingUsers.length === 1 ? `${typingUsers[0]} 正在输入...` : '多人正在输入...'}
+                                </span>
                             </div>
-                            <span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/30' : 'text-white/30'}`}>
-                                {typingUsers.length === 1 ? `${typingUsers[0]} 正在输入...` : '多人正在输入...'}
-                            </span>
-                        </div>
-                    )}
+                        )}
+                    </div>
                     {quotedMessage && (
                         <div className={`mb-2 p-2 rounded-xl backdrop-blur-xl border flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 duration-300 ${theme === 'light' ? 'bg-black/5 border-black/5 text-black' : 'bg-white/5 border-white/10 text-white'}`}>
                             <div className="flex-1 min-w-0">
@@ -741,7 +759,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             </button>
                         </div>
                     )}
-                    <div className={`backdrop-blur-md h-9 rounded-[18px] p-1 border shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center relative ${theme === 'light' ? 'bg-white/60 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10'}`}>
+                    <div className={`backdrop-blur-md ${isMobile ? 'h-14 rounded-[28px] pl-2' : 'h-9 rounded-[18px]'} p-1 border shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center relative ${theme === 'light' ? 'bg-white/60 border-black/5' : 'bg-[#1a1a1a]/60 border-white/10'}`}>
                         <button type="button" onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')} className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${inputMode === 'voice' ? 'bg-white text-black shadow-lg scale-105' : (theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black/60 hover:bg-black/10' : 'bg-white/5 text-white/50 hover:text-white/70 hover:bg-white/10')}`}>
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -836,15 +854,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         </button>
                     </div>
 
-                    <div className="flex-1 relative flex items-center justify-center p-4 md:p-12 overflow-hidden pointer-events-none">
-                        <div className="relative flex items-center justify-center">
-                            <img
-                                src={galleryImages[viewerIndex].url}
-                                className={`max-w-full max-h-full object-contain select-none pointer-events-auto ${theme === 'light' ? 'shadow-[0_0_100px_rgba(0,0,0,0.2)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.8)]'}`}
-                                alt="Viewer"
-                                onClick={(e) => e.stopPropagation()}
-                            />
-                        </div>
+                    <div className="flex-1 relative flex items-center justify-center p-0 overflow-hidden pointer-events-auto w-full h-full">
+                        <TransformWrapper centerOnInit minScale={1} maxScale={8}>
+                            <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
+                                <img
+                                    src={galleryImages[viewerIndex].url}
+                                    className={`max-w-full max-h-full object-contain select-none ${theme === 'light' ? 'shadow-[0_0_100px_rgba(0,0,0,0.2)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.8)]'}`}
+                                    alt="Viewer"
+                                    onClick={(e) => e.stopPropagation()}
+                                />
+                            </TransformComponent>
+                        </TransformWrapper>
                     </div>
 
                     <div className="p-6 pt-0 pb-12 md:pb-6 shrink-0 z-[110] flex justify-center pointer-events-none">
