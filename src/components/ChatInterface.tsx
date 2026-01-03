@@ -138,7 +138,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     useEffect(() => {
         if (activeSubTab === 'CHAT' && scrollRef.current && isOpen) {
             const container = scrollRef.current;
-            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 300;
 
             const currentLastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
             const currentLastId = currentLastMsg?.id || null;
@@ -164,7 +163,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     scrollToBottom('auto');
                 });
             } else if (hasNewerMessage) {
+                const container = scrollRef.current;
+                const isNearBottom = container ? Math.abs(container.scrollTop) < 250 : true;
                 const lastMsgIsOwn = currentLastMsg?.userId === user.id;
+
                 if (isNearBottom || isAutoScrolling.current || lastMsgIsOwn) {
                     scrollToBottom('smooth');
                     setShowNewMessageTip(false);
@@ -216,7 +218,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     useEffect(() => {
         if (activeSubTab === 'CHAT' && typingUsers.length > 0 && scrollRef.current) {
             const container = scrollRef.current;
-            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+            const isNearBottom = Math.abs(container.scrollTop) < 200;
             if (isNearBottom) {
                 scrollToBottom('smooth');
             }
@@ -254,7 +256,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         const absScrollTop = Math.abs(scrollTop);
 
         // Latest messages (visual bottom) are at scrollTop 0
-        if (absScrollTop < 50) {
+        if (absScrollTop < 200) {
             setShowNewMessageTip(false);
         }
 
