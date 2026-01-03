@@ -996,11 +996,11 @@ export default function Home() {
     <div className="fixed inset-0 bg-black overflow-hidden select-none" suppressHydrationWarning>
       {isLocatingOverlay}
       {showUnifiedSettings && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 backdrop-blur-md bg-black/40">
+        <div className={`fixed inset-0 z-[20000] flex items-center justify-center p-4 sm:p-6 backdrop-blur-2xl transition-all duration-500 ${theme === 'light' ? 'bg-white/40' : 'bg-black/60'}`}>
           <div className="absolute inset-0" onClick={() => currentUser.name !== '游客' && setShowUnifiedSettings(false)} />
-          <div className="w-full max-sm:max-w-none max-w-sm crystal-black-outer p-5 rounded-[32px] container-rainbow-main flex flex-col gap-4 animate-in zoom-in-95 duration-500 relative shadow-[0_0_100px_rgba(0,0,0,0.5)]">
+          <div className={`w-full max-sm:max-w-none max-w-sm crystal-black-outer p-5 rounded-[32px] container-rainbow-main flex flex-col gap-4 animate-in zoom-in-95 duration-500 relative ${theme === 'light' ? 'shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.5)]'}`}>
             {currentUser.name !== '游客' && (
-              <button onClick={() => setShowUnifiedSettings(false)} className="absolute top-4 right-4 w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-all z-50 border border-white/5">
+              <button onClick={() => setShowUnifiedSettings(false)} className={`absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center transition-all z-50 border ${theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black border-black/5' : 'bg-white/5 text-white/40 hover:text-white border-white/5'}`}>
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             )}
@@ -1008,13 +1008,13 @@ export default function Home() {
             <div className="flex flex-col gap-1 px-1">
               <div className="flex items-center gap-2">
                 <img src="/logo.png" onClick={handleLogoClick} className="w-6 h-6 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
-                <h3 className="text-white text-xs font-normal uppercase tracking-tight opacity-50">乌托邦</h3>
+                <h3 className={`text-xs font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/60' : 'text-white/50'}`}>乌托邦</h3>
               </div>
-              <p className="text-white/35 text-[9px] font-normal uppercase tracking-wider">Privacy secured with 2km random offset</p>
+              <p className={`text-[9px] font-normal uppercase tracking-wider ${theme === 'light' ? 'text-black/40' : 'text-white/35'}`}>Privacy secured with 2km random offset</p>
             </div>
 
             <form onSubmit={handleSettingsSubmit} className="flex flex-col gap-3.5 pt-1">
-              <input type="text" maxLength={12} placeholder="在这更改昵称" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white font-normal outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/35 text-sm" value={tempName} onChange={(e) => setTempName(e.target.value)} autoFocus />
+              <input type="text" maxLength={12} placeholder="在这更改昵称" className={`w-full border rounded-xl px-4 py-2.5 font-normal outline-none ring-2 ring-transparent transition-all text-sm ${theme === 'light' ? 'bg-black/5 border-black/10 text-black placeholder:text-black/35 focus:ring-black/5' : 'bg-white/5 border-white/10 text-white placeholder:text-white/35 focus:ring-white/10'}`} value={tempName} onChange={(e) => setTempName(e.target.value)} autoFocus />
               <div className="grid grid-cols-2 gap-2.5 select-none">
                 <div onClick={() => setTheme('dark')} className={`py-2 px-4 rounded-xl border flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95 ${theme === 'dark' ? 'bg-white/10 border-white/20' : 'bg-transparent border-white/5 opacity-50 hover:opacity-80'}`}>
                   <div className="w-5 h-5 rounded-full bg-[#1a1a1a] border border-white/20 shadow-[0_0_100px_rgba(255,255,255,0.1)] flex-shrink-0" /><span className="text-[11px] font-normal text-white/80 tracking-tight uppercase">深色</span>
@@ -1025,7 +1025,7 @@ export default function Home() {
               </div>
 
               <div className="flex flex-col gap-2 p-1">
-                <div className="flex items-center justify-between text-[11px] font-normal text-white/40 uppercase tracking-tight px-1">
+                <div className={`flex items-center justify-between text-[11px] font-normal uppercase tracking-tight px-1 ${theme === 'light' ? 'text-black/60' : 'text-white/40'}`}>
                   <span>文字大小</span>
                   <span>{fontSize}px</span>
                 </div>
@@ -1040,22 +1040,22 @@ export default function Home() {
                     setFontSize(val);
                     localStorage.setItem('whisper_font_size', val.toString());
                   }}
-                  className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+                  className={`w-full h-1.5 rounded-lg appearance-none cursor-pointer ${theme === 'light' ? 'bg-black/10 accent-black' : 'bg-white/10 accent-white'}`}
                 />
               </div>
 
-              <div className="p-3 bg-white/5 border border-white/10 rounded-2xl flex flex-col gap-2">
+              <div className={`p-3 border rounded-2xl flex flex-col gap-2 ${theme === 'light' ? 'bg-black/5 border-black/5' : 'bg-white/5 border-white/10'}`}>
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                  <span className="text-[10px] font-normal text-white/70 uppercase tracking-tight">隐私保护说明</span>
+                  <span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/70' : 'text-white/70'}`}>隐私保护说明</span>
                 </div>
-                <p className="text-[10px] text-white/45 font-normal leading-relaxed lowercase tracking-wide">
+                <p className={`text-[10px] font-normal leading-relaxed lowercase tracking-wide ${theme === 'light' ? 'text-black/50' : 'text-white/45'}`}>
                   为了保护您的驻地隐私，系统已自动为您的实时位置添加约 **2公里** 的随机偏移。这意味着即使在"地区"频道中，其他用户也无法精确推断您的真实住所。
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
-                <button type="button" onClick={() => setShowSuggestionPanel(true)} className="w-full py-2.5 bg-white/5 text-white/50 font-normal uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:bg-white/10 border border-white/5 text-xs">提建议</button>
+                <button type="button" onClick={() => setShowSuggestionPanel(true)} className={`w-full py-2.5 font-normal uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all border text-xs ${theme === 'light' ? 'bg-black/5 text-black/50 hover:bg-black/10 border-black/5' : 'bg-white/5 text-white/50 hover:bg-white/10 border-white/5'}`}>提建议</button>
                 <button type="submit" className="w-full py-2.5 bg-white text-black font-normal uppercase tracking-[0.2em] rounded-xl active:scale-[0.98] transition-all hover:shadow-[0_0_30_px_rgba(255,255,255,0.3)] shadow-xl text-xs">保存</button>
               </div>
             </form>
@@ -1063,59 +1063,62 @@ export default function Home() {
         </div>
       )}
       {showSuggestionPanel && (
-        <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4 sm:p-6 backdrop-blur-3xl bg-black/60">
-          <div className="w-full max-w-[500px] h-[85vh] crystal-black-outer rounded-[40px] container-rainbow-main flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-700 relative shadow-[0_0_150px_rgba(0,0,0,0.8)]">
-            <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/5 backdrop-blur-xl">
+        <div className={`fixed inset-0 z-[20000] flex items-center justify-center p-4 sm:p-6 backdrop-blur-2xl transition-all duration-500 ${theme === 'light' ? 'bg-white/40' : 'bg-black/60'}`}>
+          <div className={`w-full max-w-[500px] h-[85vh] crystal-black-outer rounded-[40px] container-rainbow-main flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-700 relative ${theme === 'light' ? 'shadow-[0_40px_100px_-20px_rgba(0,0,0,0.15)]' : 'shadow-[0_0_150px_rgba(0,0,0,0.8)]'}`}>
+            <div className={`p-6 border-b flex items-center justify-between backdrop-blur-xl ${theme === 'light' ? 'bg-black/5 border-black/5' : 'bg-white/5 border-white/10'}`}>
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-3">
                   <img src="/logo.png" onClick={handleLogoClick} className="w-8 h-8 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
-                  <h2 className="text-lg font-normal text-white tracking-tight uppercase">进化建议看板</h2>
+                  <h2 className={`text-lg font-normal tracking-tight uppercase ${theme === 'light' ? 'text-black' : 'text-white'}`}>进化建议看板</h2>
                 </div>
-                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className="text-[10px] font-normal text-white/50 uppercase tracking-tight">实时接收其他特工建议</span></div>
+                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/50' : 'text-white/50'}`}>实时接收其他特工建议</span></div>
               </div>
-              <button onClick={() => setShowSuggestionPanel(false)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-all border border-white/5">
+              <button onClick={() => setShowSuggestionPanel(false)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border ${theme === 'light' ? 'bg-black/5 text-black/40 hover:text-black border-black/5' : 'bg-white/5 text-white/40 hover:text-white border-white/5'}`}>
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
             <div ref={suggestionScrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth custom-scrollbar overscroll-contain">
-              {suggestions.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-white/20 underline uppercase tracking-tight">暂无建议</div> : suggestions.map((s, idx) => (
+              {suggestions.length === 0 ? <div className={`h-full flex flex-col items-center justify-center underline uppercase tracking-tight ${theme === 'light' ? 'text-black/20' : 'text-white/20'}`}>暂无建议</div> : suggestions.map((s, idx) => (
                 <div key={s.id || idx} className={`flex flex-col gap-2 ${s.user_id === currentUser.id ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-2 px-1"><span className="text-[10px] font-normal text-white/40 uppercase tracking-tighter">{s.user_id === currentUser.id ? '我' : s.user_name}</span><span className="text-[8px] font-normal text-white/20 tabular-nums lowercase">{s.timestamp ? new Date(s.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '刚刚'}</span></div>
-                  <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] font-normal leading-relaxed border shadow-sm ${s.user_id === currentUser.id ? 'bg-white/15 border-white/30 text-white rounded-tr-none' : 'bg-white/5 border-white/10 text-white/80 rounded-tl-none'}`}>{s.content}</div>
+                  <div className="flex items-center gap-2 px-1"><span className={`text-[10px] font-normal uppercase tracking-tighter ${theme === 'light' ? 'text-black/50' : 'text-white/40'}`}>{s.user_id === currentUser.id ? '我' : s.user_name}</span><span className={`text-[8px] font-normal tabular-nums lowercase ${theme === 'light' ? 'text-black/30' : 'text-white/20'}`}>{s.timestamp ? new Date(s.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '刚刚'}</span></div>
+                  <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] font-normal leading-relaxed border shadow-sm ${s.user_id === currentUser.id
+                    ? `rounded-tr-none ${theme === 'light' ? 'bg-black/10 border-black/10 text-black' : 'bg-white/15 border-white/30 text-white'}`
+                    : `rounded-tl-none ${theme === 'light' ? 'bg-black/5 border-black/5 text-black/80' : 'bg-white/5 border-white/10 text-white/80'}`
+                    }`}>{s.content}</div>
                 </div>
               ))}
             </div>
-            <div className="p-6 bg-black/40 border-t border-white/10 backdrop-blur-2xl">
+            <div className={`p-6 border-t backdrop-blur-2xl ${theme === 'light' ? 'bg-white/40 border-black/5' : 'bg-black/40 border-white/10'}`}>
               <form onSubmit={handleSuggestionSubmit} className="flex flex-col gap-4">
-                <textarea className="w-full h-24 bg-white/5 border border-white/10 rounded-2xl p-4 text-white font-normal outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/20 resize-none text-sm leading-relaxed" placeholder="输入建议..." value={suggestionText} onChange={(e) => setSuggestionText(e.target.value)} />
-                <button type="submit" disabled={isSubmittingSuggestion || !suggestionText.trim()} className={`w-full py-4 rounded-xl font-normal uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-3 ${suggestionStatus === 'success' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-white text-black hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] shadow-xl'}`}>{isSubmittingSuggestion ? '发送中...' : suggestionStatus === 'success' ? '已发送' : '发送进化建议'}</button>
+                <textarea className={`w-full h-24 border rounded-2xl p-4 font-normal outline-none ring-2 ring-transparent transition-all resize-none text-sm leading-relaxed ${theme === 'light' ? 'bg-black/5 border-black/10 text-black placeholder:text-black/30 focus:ring-black/5' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:ring-white/10'}`} placeholder="输入建议..." value={suggestionText} onChange={(e) => setSuggestionText(e.target.value)} />
+                <button type="submit" disabled={isSubmittingSuggestion || !suggestionText.trim()} className={`w-full py-4 rounded-xl font-normal uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-3 ${suggestionStatus === 'success' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : (theme === 'light' ? 'bg-black text-white hover:shadow-[0_0_30px_rgba(0,0,0,0.2)] shadow-xl' : 'bg-white text-black hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] shadow-xl')}`}>{isSubmittingSuggestion ? '发送中...' : suggestionStatus === 'success' ? '已发送' : '发送进化建议'}</button>
               </form>
             </div>
           </div>
         </div>
       )}
       {showGmPrompt && (
-        <div className="fixed inset-0 z-[30000] flex items-center justify-center p-6 backdrop-blur-3xl bg-black/80">
+        <div className={`fixed inset-0 z-[30000] flex items-center justify-center p-6 backdrop-blur-2xl transition-all duration-500 ${theme === 'light' ? 'bg-white/40' : 'bg-black/60'}`}>
           <div className="w-full max-w-xs crystal-black-outer p-6 rounded-[32px] container-rainbow-main flex flex-col gap-6 animate-in zoom-in-95 duration-500 relative">
             <div className="flex flex-col gap-2 items-center">
-              <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center border border-white/10 mb-2">
-                <svg className="w-6 h-6 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center border mb-2 ${theme === 'light' ? 'bg-black/5 border-black/10' : 'bg-white/5 border-white/10'}`}>
+                <svg className={`w-6 h-6 ${theme === 'light' ? 'text-black/40' : 'text-white/40'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
               </div>
-              <h3 className="text-white text-base font-normal uppercase tracking-[0.3em]">身份验证</h3>
-              <p className="text-white/40 text-[12px] uppercase font-normal tracking-tight text-center">输入秘密协议码以激活超级权限</p>
+              <h3 className={`text-base font-normal uppercase tracking-[0.3em] ${theme === 'light' ? 'text-black' : 'text-white'}`}>身份验证</h3>
+              <p className={`text-[12px] uppercase font-normal tracking-tight text-center ${theme === 'light' ? 'text-black/50' : 'text-white/40'}`}>输入秘密协议码以激活超级权限</p>
             </div>
             <form onSubmit={handleGmLogin} className="flex flex-col gap-4">
               <input
                 type="password"
                 placeholder="密码"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-normal outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/20 text-center tracking-[0.5em]"
+                className={`w-full border rounded-xl px-4 py-3 font-normal outline-none ring-2 ring-transparent transition-all text-center tracking-[0.5em] ${theme === 'light' ? 'bg-black/5 border-black/10 text-black placeholder:text-black/20 focus:ring-black/5' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:ring-white/10'}`}
                 value={gmPassword}
                 onChange={(e) => setGmPassword(e.target.value)}
                 autoFocus
               />
               <div className="flex gap-2">
-                <button type="button" onClick={() => { setShowGmPrompt(false); setGmPassword(''); }} className="flex-1 py-3 bg-white/5 text-white/40 font-normal uppercase tracking-tight rounded-xl text-[12px] border border-white/5">关闭</button>
-                <button type="submit" disabled={isGmLoggingIn} className="flex-1 py-3 bg-white text-black font-normal uppercase tracking-tight rounded-xl text-[12px] shadow-xl active:scale-95 transition-all">{isGmLoggingIn ? '验证中...' : '提交'}</button>
+                <button type="button" onClick={() => { setShowGmPrompt(false); setGmPassword(''); }} className={`flex-1 py-3 font-normal uppercase tracking-tight rounded-xl text-[12px] border ${theme === 'light' ? 'bg-black/5 text-black/50 border-black/5' : 'bg-white/5 text-white/40 border-white/5'}`}>关闭</button>
+                <button type="submit" disabled={isGmLoggingIn} className={`flex-1 py-3 font-normal uppercase tracking-tight rounded-xl text-[12px] transition-all active:scale-95 ${theme === 'light' ? 'bg-black text-white shadow-xl' : 'bg-white text-black shadow-xl'}`}>{isGmLoggingIn ? '验证中...' : '提交'}</button>
               </div>
             </form>
           </div>
@@ -1215,17 +1218,17 @@ export default function Home() {
             </span>
           </div>
           <div className="w-full max-w-[360px] relative flex items-center justify-center">
-            <div className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl p-1 rounded-full border border-white/10 shadow-2xl flex items-center">
+            <div className={`w-full max-w-[260px] h-12 p-1 rounded-full border backdrop-blur-3xl transition-all duration-500 flex items-center ${theme === 'light' ? 'bg-white/70 border-black/5 shadow-[0_15px_35px_rgba(0,0,0,0.1)]' : 'bg-[#1a1a1a]/90 border-white/10 shadow-2xl'}`}>
               {[{ label: '世界', value: ScaleLevel.WORLD }, { label: '城市', value: ScaleLevel.CITY }, { label: '地区', value: ScaleLevel.DISTRICT }].map(tab => {
                 const isActive = activeScale === tab.value;
-                return <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`flex-1 h-full rounded-full text-[13px] font-normal tracking-tight uppercase transition-all duration-500 ${isActive ? 'text-white bg-[#333333] shadow-lg' : 'text-white/40'}`}>{tab.label}</button>;
+                return <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`flex-1 h-full rounded-full text-[13px] font-normal tracking-tight uppercase transition-all duration-500 ${isActive ? (theme === 'light' ? 'text-black bg-black/5 shadow-sm' : 'text-white bg-[#333333] shadow-lg') : (theme === 'light' ? 'text-black/30' : 'text-white/40')}`}>{tab.label}</button>;
               })}
             </div>
-            <button onClick={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/50 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
+            <button onClick={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} className={`absolute right-0 w-12 h-12 transition-all active:scale-90 flex items-center justify-center ${theme === 'light' ? 'text-black/50 hover:text-black' : 'text-white/50 hover:text-white'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
           </div>
           <div className="w-full max-w-[360px] relative flex items-center justify-center">
-            <button onClick={() => setIsChatOpen(true)} className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl rounded-full border border-white/10 shadow-2xl flex items-center justify-center text-white font-normal uppercase tracking-[0.4em] text-[13px] active:scale-95 transition-all">恢复聊天</button>
-            <button onClick={handleReturnToUser} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/50 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" /></svg></button>
+            <button onClick={() => setIsChatOpen(true)} className={`w-full max-w-[260px] h-12 rounded-full border backdrop-blur-3xl flex items-center justify-center font-normal uppercase tracking-[0.4em] text-[13px] active:scale-95 transition-all ${theme === 'light' ? 'bg-white/70 border-black/5 text-black/80 shadow-[0_15px_35px_rgba(0,0,0,0.1)]' : 'bg-[#1a1a1a]/90 border-white/10 text-white shadow-2xl'}`}>恢复聊天</button>
+            <button onClick={handleReturnToUser} className={`absolute right-0 w-12 h-12 transition-all active:scale-90 flex items-center justify-center ${theme === 'light' ? 'text-black/50 hover:text-black' : 'text-white/50 hover:text-white'}`}><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" /></svg></button>
           </div>
         </div>
       )}
@@ -1237,10 +1240,12 @@ export default function Home() {
           right: '4vw',
           bottom: `calc(${window.innerHeight}px - ${viewportHeight} + 4vw)`,
           borderRadius: '32px',
+          boxShadow: theme === 'light' ? '0 20px 60px -15px rgba(0,0,0,0.1)' : '0 20px 50px rgba(0,0,0,0.5)',
           transition: (mounted && window.visualViewport && window.visualViewport.height < window.innerHeight * 0.9) ? 'none' : 'bottom 0.3s ease-out, transform 0.3s ease-out, opacity 0.3s ease-out'
         } : {
           width: `${chatWidth}px`,
-          borderRadius: '40px'
+          borderRadius: '40px',
+          boxShadow: theme === 'light' ? '0 20px 60px -15px rgba(0,0,0,0.1)' : '0 20px 50px rgba(0,0,0,0.5)',
         }}
         onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
         onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
@@ -1264,7 +1269,25 @@ export default function Home() {
           onUploadVoice={onUploadVoice}
           onRecallMessage={onRecallMessage}
           fetchLiveStreams={async () => []}
-          fetchSharedImages={async () => []}
+          fetchSharedImages={async (rid: string) => {
+            if (!supabase || !rid) return [];
+            const { data } = await supabase.from('messages')
+              .select('*')
+              .eq('room_id', rid)
+              .eq('type', 'image')
+              .order('timestamp', { ascending: false });
+            if (!data) return [];
+            return data.map((m: any) => ({
+              id: m.id,
+              url: m.content,
+              caption: '',
+              author: m.user_name || `NODE_${m.user_id.substring(0, 4)}`,
+              likes: 0,
+              lat: 0,
+              lng: 0,
+              timestamp: new Date(m.timestamp).getTime()
+            }));
+          }}
           isOpen={!isMobile || isChatOpen}
           onToggle={() => setIsChatOpen(false)}
           isMobile={isMobile}
@@ -1290,12 +1313,12 @@ export default function Home() {
         <PWAInstaller theme={theme} />
       </div>
       <style>{`
-                .crystal-nav-vertical { position: relative; background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.3)'}; backdrop-filter: blur(12px); border-radius: 20px; border: 1.5px solid transparent; }
-                .crystal-nav-vertical::after { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: 0.8; z-index: 10; animation: rainbow-drift 6s linear infinite; }
-                .crystal-black-outer { background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.35)'}; backdrop-filter: blur(12px); }
-                .container-rainbow-main { position: relative; border: 1px solid ${theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255, 255, 255, 0.05)'}; }
-                .container-rainbow-main::after { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: 0.8; z-index: 50; animation: rainbow-drift 6s linear infinite; }
-                .bubble-rainbow { position: relative; background: ${theme === 'light' ? 'rgba(255,255,255,0.7)' : 'rgba(26, 26, 26, 0.5)'} !important; backdrop-filter: blur(12px); border-radius: 20px; }
+                .crystal-nav-vertical { position: relative; background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.45)' : 'rgba(28, 28, 28, 0.5)'}; backdrop-filter: blur(16px); border-radius: 20px; border: 1.5px solid transparent; }
+                .crystal-nav-vertical::after { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: ${theme === 'light' ? '0.3' : '0.6'}; z-index: 10; animation: rainbow-drift 6s linear infinite; }
+                .crystal-black-outer { background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(28, 28, 28, 0.6)'}; backdrop-filter: blur(20px); }
+                .container-rainbow-main { position: relative; border: 1px solid ${theme === 'light' ? 'rgba(0,0,0,0.02)' : 'rgba(255, 255, 255, 0.08)'}; }
+                .container-rainbow-main::after { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: ${theme === 'light' ? '0.3' : '0.6'}; z-index: 50; animation: rainbow-drift 6s linear infinite; }
+                .bubble-rainbow { position: relative; background: ${theme === 'light' ? 'rgba(255,255,255,0.6)' : 'rgba(35, 35, 35, 0.6)'} !important; backdrop-filter: blur(12px); border-radius: 20px; }
                 .bubble-rainbow::before { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; z-index: 10; animation: rainbow-drift 6s linear infinite; }
                 .bubble-rainbow > * { position: relative; z-index: 1; }
                 @keyframes rainbow-drift { 0% { filter: hue-rotate(0deg); } 100% { filter: hue-rotate(360deg); } }

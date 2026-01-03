@@ -78,6 +78,7 @@ export interface SharedImage {
     likes: number;
     lat: number;
     lng: number;
+    timestamp: number;
 }
 
 export interface UserPresence {

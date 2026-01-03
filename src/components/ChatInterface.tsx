@@ -69,6 +69,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const [showNewMessageTip, setShowNewMessageTip] = useState(false);
 
     const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+    const [galleryImages, setGalleryImages] = useState<SharedImage[]>([]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -86,20 +87,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const lastRoomId = useRef<string | null>(null);
     const lastSubTab = useRef<SubTabType>('CHAT');
 
-    const galleryItems = messages.filter(msg => {
-        if (msg.isRecalled) return false;
-        if (msg.type === 'voice') return false;
-        if (msg.type === 'image') return true;
-        const lower = msg.content.toLowerCase();
-        const isVoice = lower.includes('voice_messages') || lower.includes('.webm') || lower.includes('.mp4') || lower.includes('.mp3');
-        if (isVoice) return false;
-        const isImage = lower.startsWith('blob:') || (lower.startsWith('http') && (
-            lower.includes('.jpg') || lower.includes('.png') || lower.includes('.jpeg') ||
-            lower.includes('.webp') || lower.includes('.gif') ||
-            (lower.includes('supabase') && lower.includes('chat_images'))
-        ));
-        return isImage;
-    });
+
 
     const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
         if (scrollRef.current) {
@@ -112,6 +100,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             });
         }
     };
+
+    useEffect(() => {
+        if (activeSubTab === 'IMAGES' && roomId) {
+            fetchSharedImages(roomId).then(setGalleryImages);
+        } else if (roomId !== lastRoomId.current) {
+            setGalleryImages([]);
+        }
+    }, [activeSubTab, roomId, fetchSharedImages]);
+
+    useEffect(() => {
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg && (lastMsg.type === 'image' || lastMsg.content.includes('chat_images'))) {
+            if (!galleryImages.some(img => img.id === lastMsg.id)) {
+                setGalleryImages(prev => [{
+                    id: lastMsg.id,
+                    url: lastMsg.content,
+                    caption: '',
+                    author: lastMsg.userName,
+                    likes: 0,
+                    lat: 0,
+                    lng: 0,
+                    timestamp: lastMsg.timestamp
+                }, ...prev]);
+            }
+        }
+    }, [messages]);
 
     useEffect(() => {
         if (activeSubTab === 'CHAT' && scrollRef.current && isOpen) {
@@ -301,7 +315,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
 
     const openViewer = (url: string) => {
-        const idx = galleryItems.findIndex(item => item.content === url);
+        const idx = galleryImages.findIndex(item => item.url === url);
         if (idx !== -1) setViewerIndex(idx);
     };
 
@@ -315,13 +329,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     return (
         <div
-            className={`flex flex-col h-full w-full overflow-hidden transition-all duration-700 relative crystal-black-outer ${isMobile ? 'rounded-[32px]' : 'rounded-[40px]'} container-rainbow-main shadow-[0_20px_50px_rgba(0,0,0,0.5)]`}
+            className={`flex flex-col h-full w-full overflow-hidden transition-all duration-700 relative crystal-black-outer ${isMobile ? 'rounded-[32px]' : 'rounded-[40px]'} container-rainbow-main ${theme === 'light' ? 'shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)]' : 'shadow-[0_20px_50px_rgba(0,0,0,0.5)]'}`}
             style={{ transform: 'translateZ(0)', touchAction: isMobile ? 'pan-y' : 'auto' }}
             onTouchMove={(e) => { if (isMobile) e.stopPropagation(); }}
             onTouchStart={(e) => { if (isMobile) e.stopPropagation(); }}
         >
             <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden text-clip">
-                <div className="absolute inset-0 bg-black/20" />
+                <div className={`absolute inset-0 transition-colors duration-700 ${theme === 'light' ? 'bg-white/20' : 'bg-black/10'}`} />
             </div>
 
             <div className={`shrink-0 z-30 transition-all duration-500 ${isMobile ? 'p-4 pt-1' : 'p-6 pt-1'} flex flex-col gap-2`}>
@@ -431,7 +445,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             if (msg.isRecalled) {
                                 return (
                                     <div key={msg.id} className="flex justify-center my-1 animate-in fade-in duration-500">
-                                        <span className={`text-[12px] bg-black/5 ${theme === 'light' ? 'text-black/30' : 'text-white/40'} px-3 py-1 rounded-full flex items-center gap-1.5`}>
+                                        <span className={`text-[12px] bg-black/5 ${theme === 'light' ? 'text-black/50' : 'text-white/40'} px-3 py-1 rounded-full flex items-center gap-1.5`}>
                                             <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                             {isOwn ? '你撤回了一条消息' : `${msg.userName} 撤回了一条消息`}
                                         </span>
@@ -442,7 +456,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             return (
                                 <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-700 ${isFirstInGroup ? 'mt-3' : 'mt-1'}`}>
                                     {isFirstInGroup && (
-                                        <div className={`mb-1 px-1 text-[11px] font-normal uppercase tracking-tighter flex items-center gap-1.5 ${isOwn ? (theme === 'light' ? 'text-black/40' : 'text-white/55') : (theme === 'light' ? 'text-black/30' : 'text-white/40')}`}>
+                                        <div className={`mb-1 px-1 text-[11px] font-normal uppercase tracking-tighter flex items-center gap-1.5 ${isOwn ? (theme === 'light' ? 'text-black/60' : 'text-white/55') : (theme === 'light' ? 'text-black/50' : 'text-white/40')}`}>
                                             <span
                                                 className={`cursor-pointer transition-opacity hover:opacity-70 ${msg.isGM ? 'text-rainbow-scroll scale-110 origin-left inline-block' : ''}`}
                                                 onClick={() => {
@@ -472,8 +486,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         {msg.replyTo && (
                                             <div className={`mb-1 p-2 rounded-xl text-[12px] border shadow-sm backdrop-blur-md transition-all 
                                                 ${isOwn
-                                                    ? 'mr-1 border-white/10 bg-white/10 text-white/60'
-                                                    : `ml-1 ${theme === 'light' ? 'border-black/5 bg-black/5 text-black/40' : 'border-white/5 bg-white/5 text-white/40'}`
+                                                    ? `mr-1 ${theme === 'light' ? 'border-black/5 bg-black/[0.04] text-black/70' : 'border-white/10 bg-white/15 text-white/85'}`
+                                                    : `ml-1 ${theme === 'light' ? 'border-black/5 bg-black/[0.04] text-black/70' : 'border-white/5 bg-white/5 text-white/40'}`
                                                 }`}>
                                                 <div className="font-normal mb-0.5 truncate max-w-[150px]">{msg.replyTo.userName}</div>
                                                 <div className="opacity-80 line-clamp-1 truncate max-w-[150px]">{msg.replyTo.content}</div>
@@ -634,8 +648,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                 {activeSubTab === 'IMAGES' && (
                     <div className="grid grid-cols-3 gap-2 pb-8 animate-in fade-in duration-700">
-                        {galleryItems.map((msg, i) => (
-                            <img key={msg.id} src={msg.content} onClick={() => setViewerIndex(i)} className="w-full aspect-square object-cover rounded-[16px] cursor-zoom-in border border-white/5 hover:border-white/20 hover:scale-[1.02] transition-all duration-500 shadow-xl" alt="Gallery" />
+                        {galleryImages.map((msg, i) => (
+                            <img key={msg.id} src={msg.url} onClick={() => setViewerIndex(i)} className="w-full aspect-square object-cover rounded-[16px] cursor-zoom-in border border-white/5 hover:border-white/20 hover:scale-[1.02] transition-all duration-500 shadow-xl" alt="Gallery" />
                         ))}
                     </div>
                 )}
@@ -674,7 +688,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     {quotedMessage && (
                         <div className={`mb-2 p-2 rounded-xl backdrop-blur-xl border flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 duration-300 ${theme === 'light' ? 'bg-black/5 border-black/5 text-black' : 'bg-white/5 border-white/10 text-white'}`}>
                             <div className="flex-1 min-w-0">
-                                <div className="text-[12px] font-normal opacity-40 uppercase tracking-tight mb-0.5 truncate">引用 {quotedMessage.userName}</div>
+                                <div className={`text-[12px] font-normal uppercase tracking-tight mb-0.5 truncate ${theme === 'light' ? 'opacity-60' : 'opacity-40'}`}>引用 {quotedMessage.userName}</div>
                                 <div className="text-[14px] opacity-80 truncate">{quotedMessage.content}</div>
                             </div>
                             <button onClick={() => setQuotedMessage(null)} className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:bg-black/10 transition-colors">
@@ -780,7 +794,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     <div className="flex-1 relative flex items-center justify-center p-4 md:p-12 overflow-hidden pointer-events-none">
                         <div className="relative flex items-center justify-center">
                             <img
-                                src={galleryItems[viewerIndex].content}
+                                src={galleryImages[viewerIndex].url}
                                 className={`max-w-full max-h-full object-contain select-none pointer-events-auto ${theme === 'light' ? 'shadow-[0_0_100px_rgba(0,0,0,0.2)]' : 'shadow-[0_0_100px_rgba(0,0,0,0.8)]'}`}
                                 alt="Viewer"
                                 onClick={(e) => e.stopPropagation()}
@@ -795,16 +809,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             <div className={`flex-1 backdrop-blur-3xl h-9 rounded-[18px] px-4 border shadow-[0_20px_50px_rgba(0,0,0,0.2)] flex items-center justify-between min-0 ${theme === 'light' ? 'bg-white/90 border-black/10' : 'bg-[#1a1a1a]/90 border-white/10'}`}>
                                 <div className="flex items-center gap-3 min-0">
                                     <div className={`w-2 h-2 rounded-full shrink-0 ${theme === 'light' ? 'bg-black/60 shadow-[0_0_8px_rgba(0,0,0,0.3)]' : 'bg-white/60 shadow-[0_0_8px_rgba(255,255,255,0.5)]'}`} />
-                                    <span className={`text-[13px] font-normal tracking-[0.1em] uppercase truncate ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>{galleryItems[viewerIndex].userName}</span>
+                                    <span className={`text-[13px] font-normal tracking-[0.1em] uppercase truncate ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>{galleryImages[viewerIndex].author}</span>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0 ml-2">
-                                    <span className={`text-[12px] font-normal tracking-[0.1em] tabular-nums whitespace-nowrap ${theme === 'light' ? 'text-black/50' : 'text-white/50'}`}>{formatTimeSimple(new Date(galleryItems[viewerIndex].timestamp))}</span>
+                                    <span className={`text-[12px] font-normal tracking-[0.1em] tabular-nums whitespace-nowrap ${theme === 'light' ? 'text-black/50' : 'text-white/50'}`}>{formatTimeSimple(new Date(galleryImages[viewerIndex].timestamp))}</span>
                                     <div className={`w-px h-4 ${theme === 'light' ? 'bg-black/10' : 'bg-white/10'}`} />
-                                    <span className={`text-[12px] font-normal tracking-[0.1em] whitespace-nowrap ${theme === 'light' ? 'text-black/40' : 'text-white/40'}`}>{viewerIndex + 1}/{galleryItems.length}</span>
+                                    <span className={`text-[12px] font-normal tracking-[0.1em] whitespace-nowrap ${theme === 'light' ? 'text-black/40' : 'text-white/40'}`}>{viewerIndex + 1}/{galleryImages.length}</span>
                                 </div>
                             </div>
 
-                            <button disabled={viewerIndex === galleryItems.length - 1} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! + 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === galleryItems.length - 1 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg></button>
+                            <button disabled={viewerIndex === galleryImages.length - 1} onClick={(e) => { e.stopPropagation(); setViewerIndex(prev => prev! + 1); }} className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-3xl border transition-all shadow-xl shrink-0 ${theme === 'light' ? 'bg-white/90 border-black/10 text-black' : 'bg-[#1a1a1a]/90 border-white/10 text-white'} ${viewerIndex === galleryImages.length - 1 ? 'opacity-0 pointer-events-none' : 'active:scale-95'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg></button>
                         </div>
                     </div>
                 </div>

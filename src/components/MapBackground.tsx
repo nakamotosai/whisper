@@ -457,11 +457,12 @@ export const MapBackground = memo(({
     return (
         <div className={`absolute inset-0 overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-100'}`}>
             <style>{`
-                .leaflet-container { background: ${isDark ? '#090909' : '#f3f4f6'} !important; outline: none !important; }
+                .leaflet-container { background: ${isDark ? '#1a1a1a' : '#f3f4f6'} !important; outline: none !important; }
                 
-                /* Optimized tile loading - removed heavy filters */
+                /* Optimized tile loading - applied theme filters */
                 .leaflet-tile {
                     will-change: transform;
+                    ${isDark ? 'filter: brightness(1.6) contrast(0.9) saturate(1.2);' : ''}
                 }
                 
                 .user-hex-outline { 
