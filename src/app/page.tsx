@@ -500,17 +500,15 @@ export default function Home() {
       const { data: settings } = await supabase.from('site_settings').select('value_text').eq('key', 'gm_active_user_id').single();
 
       if (settings?.value_text && settings.value_text !== currentUser.id) {
-        // Check if the user is actually online (Presence might be complex, let's assume if it's set, someone is GM)
-        // For simplicity, we allow override if it's been more than 5 minutes since update (last active)
-        // But here we'll just show the requirement "Only one GM allowed"
-        const { data: presenceState } = await supabase.channel('world_global').presenceState();
-        const isAnotherGmOnline = Object.values(presenceState).flat().some((p: any) => p.isGM && p.user_id !== currentUser.id);
+        const isAnotherGmOnline = Object.values(onlineUsers).flat().some((p: any) => p.isGM && p.user_id !== currentUser.id);
 
         if (isAnotherGmOnline) {
-          alert('当前已有另一位特工老蔡在线，请稍后再试。');
-          setShowGmPrompt(false);
-          setGmPassword('');
-          return;
+          if (!confirm('检测到已有另一位特工老蔡在线（可能是您在其他设备上的会话）。是否强制接管该身份？')) {
+            setShowGmPrompt(false);
+            setGmPassword('');
+            setIsGmLoggingIn(false);
+            return;
+          }
         }
       }
 
@@ -537,13 +535,53 @@ export default function Home() {
     }
   };
 
+  const handleLogoutGM = () => {
+    if (!currentUser.isGM) return;
+
+    // Reset to a random name
+    const newName = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
+    const guestUser: User = {
+      ...currentUser,
+      name: newName,
+      isGM: false
+    };
+
+    setCurrentUser(guestUser);
+    setTempName(newName);
+    localStorage.setItem('whisper_user_name', newName); // This is enough as isGM is derived or temporary
+
+    setShowUnifiedSettings(false);
+    alert('已成功退出超级权限，您现在是普通用户。');
+  };
+
   const handleUpdateAnyUserName = async (userId: string, newName: string) => {
     if (!currentUser.isGM || !supabase) return;
+
+    // Uniqueness check for GM action too
+    const allOnlineUserNames = Object.values(onlineUsers).flat().map(u => u.user_name);
+    if (allOnlineUserNames.includes(newName)) {
+      alert('目标代号已被占用，请尝试其他代号。');
+      return;
+    }
+
     try {
+      // 1. Update DB for future loads
       const { error } = await supabase.from('messages').update({ user_name: newName }).eq('user_id', userId);
       if (error) throw error;
-      alert(`已将用户 ID 为 ${userId} 的名字改为 ${newName}`);
+
+      // 2. Broadcast to all online clients for real-time update
+      const rid = roomIds[activeScale];
+      if (channelsRef.current[rid]) {
+        await channelsRef.current[rid].send({
+          type: 'broadcast',
+          event: 'user-update',
+          payload: { userId, newName }
+        });
+      }
+
+      alert(`已成功将用户名字全局同步更新为: ${newName}`);
     } catch (err) {
+      console.error('Update name failed:', err);
       alert('更改失败');
     }
   };
@@ -684,6 +722,18 @@ export default function Home() {
         }
         setOnlineUsers(prev => ({ ...prev, [scale]: users }));
       })
+      .on('broadcast', { event: 'user-update' }, ({ payload }) => {
+        setAllMessages(prev => {
+          const updatedScaleMessages = prev[scale].map(m =>
+            m.userId === payload.userId ? { ...m, userName: payload.newName } : m
+          );
+          return { ...prev, [scale]: updatedScaleMessages };
+        });
+        if (payload.userId === currentUserRef.current.id) {
+          setCurrentUser(prev => ({ ...prev, name: payload.newName }));
+          localStorage.setItem('whisper_user_name', payload.newName);
+        }
+      })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
@@ -744,6 +794,18 @@ export default function Home() {
           users.push(...(newState[key] as any));
         }
         setOnlineUsers(prev => ({ ...prev, [scale]: users }));
+      })
+      .on('broadcast', { event: 'user-update' }, ({ payload }) => {
+        setAllMessages(prev => {
+          const updatedScaleMessages = prev[scale].map(m =>
+            m.userId === payload.userId ? { ...m, userName: payload.newName } : m
+          );
+          return { ...prev, [scale]: updatedScaleMessages };
+        });
+        if (payload.userId === currentUserRef.current.id) {
+          setCurrentUser(prev => ({ ...prev, name: payload.newName }));
+          localStorage.setItem('whisper_user_name', payload.newName);
+        }
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
@@ -817,9 +879,21 @@ export default function Home() {
     e?.preventDefault();
     const finalName = tempName.trim() || RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
 
+    if (finalName === currentUser.name) {
+      setShowUnifiedSettings(false);
+      return;
+    }
+
     // Reserve "老蔡" for GM
     if (finalName === '老蔡' && !currentUser.isGM) {
       alert('此代号受保护，请选择其他代号。');
+      return;
+    }
+
+    // Uniqueness check: Check against all online users in all scales
+    const allOnlineUserNames = Object.values(onlineUsers).flat().map(u => u.user_name);
+    if (allOnlineUserNames.includes(finalName)) {
+      alert('该代号已被他人占用，请尝试其他代号。');
       return;
     }
 
@@ -1089,6 +1163,19 @@ export default function Home() {
                   className={`w-full h-1.5 rounded-lg appearance-none cursor-pointer ${theme === 'light' ? 'bg-black/10 accent-black' : 'bg-white/10 accent-white'}`}
                 />
               </div>
+
+              {currentUser.isGM && (
+                <button
+                  type="button"
+                  onClick={handleLogoutGM}
+                  className={`w-full py-2.5 rounded-xl border flex items-center justify-center gap-2 transition-all active:scale-95 bg-red-500/10 border-red-500/20 text-red-500 text-xs font-normal uppercase tracking-wider`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  退出超级权限 (老蔡)
+                </button>
+              )}
 
               <div className={`p-3 border rounded-2xl flex flex-col gap-2 ${theme === 'light' ? 'bg-black/5 border-black/5' : 'bg-white/5 border-white/10'}`}>
                 <div className="flex items-center gap-2">

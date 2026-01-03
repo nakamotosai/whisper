@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
@@ -75,13 +75,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const [galleryImages, setGalleryImages] = useState<SharedImage[]>([]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
-    const virtualizer = useVirtualizer({
-        count: messages.length,
-        getScrollElement: () => scrollRef.current,
-        estimateSize: () => 80,
-        overscan: 5,
-        // getItemKey: (index) => messages[index]?.id || index,
-    });
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -101,13 +95,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
         if (scrollRef.current) {
-            const container = scrollRef.current;
-            container.scrollTo({ top: container.scrollHeight + 1000, behavior });
+            // In flex-col-reverse, scrollTop = 0 is the bottom
+            scrollRef.current.scrollTo({ top: 0, behavior });
             setShowNewMessageTip(false);
-
-            requestAnimationFrame(() => {
-                if (container) container.scrollTo({ top: container.scrollHeight + 1000, behavior });
-            });
         }
     };
 
@@ -183,15 +173,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 }
             }
 
-            if (lastScrollHeight.current > 0) {
-                const heightDiff = container.scrollHeight - lastScrollHeight.current;
-                if (heightDiff > 0) {
-                    container.scrollTop = container.scrollTop + heightDiff;
-                }
-                lastScrollHeight.current = 0;
-            }
-
+            // Scroll anchoring is now handled natively by column-reverse
             lastMessageId.current = currentLastId;
+            lastSubTab.current = activeSubTab;
             lastSubTab.current = activeSubTab;
         } else {
             lastSubTab.current = activeSubTab;
@@ -267,12 +251,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const handleScroll = async () => {
         if (!scrollRef.current) return;
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-        if (scrollHeight - scrollTop - clientHeight < 50) {
+        const absScrollTop = Math.abs(scrollTop);
+
+        // Latest messages (visual bottom) are at scrollTop 0
+        if (absScrollTop < 50) {
             setShowNewMessageTip(false);
         }
-        if (scrollTop < 50 && hasMore && !isLoadingMore && activeSubTab === 'CHAT') {
+
+        // History messages (visual top) are at the "end" of the scroll range
+        if (absScrollTop + clientHeight > scrollHeight - 100 && hasMore && !isLoadingMore && activeSubTab === 'CHAT') {
             setIsLoadingMore(true);
-            lastScrollHeight.current = scrollHeight;
             if (onLoadMore) {
                 await onLoadMore(scale);
             }
@@ -496,44 +484,27 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
 
             <div
-                className="flex-1 min-h-0 overflow-y-auto px-2 py-2 scrollbar-hide relative overscroll-contain touch-pan-y"
+                className="flex-1 min-h-0 overflow-y-auto px-2 py-2 scrollbar-hide relative overscroll-contain touch-pan-y flex flex-col-reverse"
                 ref={scrollRef}
                 onScroll={handleScroll}
                 style={{
-                    maskImage: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0) 2px, rgba(0,0,0,0.1) 6px, rgba(0,0,0,0.4) 12px, black 24px)',
-                    WebkitMaskImage: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0) 2px, rgba(0,0,0,0.1) 6px, rgba(0,0,0,0.4) 12px, black 24px)',
-                    WebkitOverflowScrolling: 'touch'
+                    maskImage: 'linear-gradient(to top, transparent, rgba(0,0,0,0) 2px, rgba(0,0,0,0.1) 6px, rgba(0,0,0,0.4) 12px, black 24px)',
+                    WebkitMaskImage: 'linear-gradient(to top, transparent, rgba(0,0,0,0) 2px, rgba(0,0,0,0.1) 6px, rgba(0,0,0,0.4) 12px, black 24px)',
+                    WebkitOverflowScrolling: 'touch',
+                    overflowAnchor: 'auto'
                 }}
             >
                 {activeSubTab === 'CHAT' && (
-                    <div className="relative" style={{ height: `${virtualizer.getTotalSize()}px` }}>
-                        {hasMore && (
-                            <div className="flex justify-center py-4">
-                                {isLoadingMore ? (
-                                    <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-                                ) : (
-                                    <span className="text-[12px] font-normal text-white/20 uppercase tracking-tight">
-                                        继续滑动加载更多历史消息
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                        {!hasMore && messages.length > 0 && (
-                            <div className="flex justify-center py-4">
-                                <span className="text-[12px] font-normal text-white/10 uppercase tracking-tight">
-                                    没有更多历史消息了
-                                </span>
-                            </div>
-                        )}
-                        {virtualizer.getVirtualItems().map((virtualRow) => {
-                            const index = virtualRow.index;
-                            const msg = messages[index];
+                    <div className="flex flex-col-reverse relative">
+                        {/* Newest messages at the bottom visually (start of flex-col-reverse list) */}
+                        {[...messages].reverse().map((msg, reversedIndex) => {
+                            const index = messages.length - 1 - reversedIndex;
                             const prevMsg = index > 0 ? messages[index - 1] : null;
                             const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
 
                             return (
                                 <MessageItem
-                                    key={virtualRow.key}
+                                    key={msg.id}
                                     msg={msg}
                                     prevMsg={prevMsg}
                                     nextMsg={nextMsg}
@@ -543,8 +514,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                     playingAudioUrl={playingAudioUrl}
                                     fontSize={fontSize}
                                     index={index}
-                                    measureElement={virtualizer.measureElement}
-                                    style={{ transform: `translateY(${virtualRow.start}px)` }}
                                     onSetActiveMenu={handleSetActiveMenu}
                                     onUnsetActiveMenu={handleUnsetActiveMenu}
                                     onRecall={onRecallMessage}
@@ -557,6 +526,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                 />
                             );
                         })}
+
+                        {/* Loading indicator at the TOP visually (end of flex-col-reverse list) */}
+                        {hasMore && (
+                            <div className="flex justify-center py-4 order-last">
+                                {isLoadingMore ? (
+                                    <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+                                ) : (
+                                    <span className="text-[12px] font-normal text-white/20 uppercase tracking-tight">
+                                        继续滑动加载更多历史消息
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                        {!hasMore && messages.length > 0 && (
+                            <div className="flex justify-center py-4 order-last">
+                                <span className="text-[12px] font-normal text-white/10 uppercase tracking-tight">
+                                    没有更多历史消息了
+                                </span>
+                            </div>
+                        )}
                     </div>
                 )}
 

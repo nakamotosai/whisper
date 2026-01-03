@@ -19,8 +19,6 @@ interface MessageItemProps {
     playingAudioUrl: string | null;
     fontSize: number;
     index: number;
-    measureElement: (node: Element | null) => void;
-    style: React.CSSProperties;
     // Actions
     onUnsetActiveMenu: () => void;
     onSetActiveMenu: (id: string) => void;
@@ -35,7 +33,6 @@ interface MessageItemProps {
 
 export const MessageItem = memo(({
     msg, prevMsg, nextMsg, user, theme, isActiveMenu, playingAudioUrl, fontSize, index,
-    measureElement, style,
     onUnsetActiveMenu, onSetActiveMenu, onRecall, onDelete, onUpdateName, onQuote, onPlayVoice, onViewImage, onAddMention
 }: MessageItemProps) => {
     const isOwn = msg.userId === user.id;
@@ -51,12 +48,7 @@ export const MessageItem = memo(({
 
     if (msg.isRecalled) {
         return (
-            <div
-                ref={measureElement}
-                data-index={index}
-                className="absolute left-0 right-0 px-2 flex justify-center my-1"
-                style={style}
-            >
+            <div data-index={index} className="w-full px-2 flex justify-center my-1">
                 <span className={`text-[12px] bg-black/5 ${theme === 'light' ? 'text-black/50' : 'text-white/40'} px-3 py-1 rounded-full flex items-center gap-1.5`}>
                     <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     {isOwn ? '你撤回了一条消息' : `${msg.userName} 撤回了一条消息`}
@@ -67,10 +59,8 @@ export const MessageItem = memo(({
 
     return (
         <div
-            ref={measureElement}
             data-index={index}
-            className={`absolute left-0 right-0 px-2 flex flex-col ${isOwn ? 'items-end' : 'items-start'} ${isFirstInGroup ? 'pt-3' : 'pt-1'}`}
-            style={style}
+            className={`w-full px-2 flex flex-col ${isOwn ? 'items-end' : 'items-start'} ${isFirstInGroup ? 'pt-3' : 'pt-1'}`}
         >
             {isFirstInGroup && (
                 <div className={`mb-1 px-1 text-[11px] font-normal uppercase tracking-tighter flex items-center gap-1.5 ${isOwn ? (theme === 'light' ? 'text-black/60' : 'text-white/55') : (theme === 'light' ? 'text-black/50' : 'text-white/40')}`}>
