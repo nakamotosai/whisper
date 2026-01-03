@@ -14,7 +14,7 @@ import { zhCN } from 'date-fns/locale';
 
 const MapWithNoSSR = dynamic(
   () => import('@/components/MapBackground').then((mod) => mod.MapBackground),
-  { ssr: false, loading: () => <div className="h-screen w-screen bg-black flex items-center justify-center text-white/5 font-black tracking-[0.5em] uppercase">Initializing Spatial System...</div> }
+  { ssr: false, loading: () => <div className="h-screen w-screen bg-black flex items-center justify-center text-white/5 font-normal tracking-[0.5em] uppercase">Initializing Spatial System...</div> }
 );
 
 const GUEST_USER: User = { id: 'guest', avatarSeed: 'default', name: '游客' };
@@ -84,6 +84,12 @@ export default function Home() {
     [ScaleLevel.WORLD]: 0
   });
 
+  const [mentionCounts, setMentionCounts] = useState<Record<ScaleLevel, number>>({
+    [ScaleLevel.DISTRICT]: 0,
+    [ScaleLevel.CITY]: 0,
+    [ScaleLevel.WORLD]: 0
+  });
+
   const [onlineUsers, setOnlineUsers] = useState<Record<ScaleLevel, UserPresence[]>>({
     [ScaleLevel.DISTRICT]: [],
     [ScaleLevel.CITY]: [],
@@ -98,10 +104,12 @@ export default function Home() {
 
   const [chatAnchor, setChatAnchor] = useState<[number, number] | null>([location.lat, location.lng]);
   const activeScaleRef = useRef<ScaleLevel>(activeScale);
+  const currentUserRef = useRef<User>(currentUser);
   const channelsRef = useRef<Record<string, any>>({});
   const isUpdatingLocationRef = useRef(false);
 
   useEffect(() => { activeScaleRef.current = activeScale; }, [activeScale]);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
   // Handle PWA App Badge (Notification counts on desktop icon)
   useEffect(() => {
@@ -126,16 +134,40 @@ export default function Home() {
   const getSmartInitialLocation = useCallback(() => {
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (tz.includes('Tokyo') || tz.includes('Japan') || tz.includes('Asia/Tokyo')) return JAPAN_DEFAULT;
-      if (tz.includes('Seoul') || tz.includes('Korea')) return { lat: 35.9078, lng: 127.7669, zoom: 5 };
-      if (tz.includes('Taipei') || tz.includes('Taiwan')) return { lat: 23.6978, lng: 120.9605, zoom: 5 };
-      if (tz.includes('Singapore')) return { lat: 1.3521, lng: 103.8198, zoom: 5 };
-      if (tz.includes('Sydney') || tz.includes('Australia')) return { lat: -33.8688, lng: 151.2093, zoom: 5 };
-      if (tz.includes('America') || tz.includes('US/')) return { lat: 37.0902, lng: -95.7129, zoom: 5 };
-      if (tz.includes('London') || tz.includes('Europe/')) return { lat: 48.8566, lng: 2.3522, zoom: 5 };
+      if (tz.includes('Tokyo') || tz.includes('Japan') || tz.includes('Asia/Tokyo')) return { ...JAPAN_DEFAULT, countryCode: 'JP' };
+      if (tz.includes('Seoul') || tz.includes('Korea')) return { lat: 35.9078, lng: 127.7669, zoom: 5, countryCode: 'KR' };
+      if (tz.includes('Taipei') || tz.includes('Taiwan')) return { lat: 23.6978, lng: 120.9605, zoom: 5, countryCode: 'TW' };
+      if (tz.includes('Hong_Kong')) return { lat: 22.3193, lng: 114.1694, zoom: 5, countryCode: 'HK' };
+      if (tz.includes('Singapore')) return { lat: 1.3521, lng: 103.8198, zoom: 5, countryCode: 'SG' };
+      if (tz.includes('Sydney') || tz.includes('Australia')) return { lat: -33.8688, lng: 151.2093, zoom: 5, countryCode: 'AU' };
+      if (tz.includes('America') || tz.includes('US/')) return { lat: 37.0902, lng: -95.7129, zoom: 5, countryCode: 'US' };
+      if (tz.includes('London')) return { lat: 51.5074, lng: -0.1278, zoom: 5, countryCode: 'GB' };
+      if (tz.includes('Europe/')) return { lat: 48.8566, lng: 2.3522, zoom: 5, countryCode: 'FR' }; // Default Europe to FR for coords
     } catch (e) { }
-    return CHINA_DEFAULT;
+    return { ...CHINA_DEFAULT, countryCode: 'CN' };
   }, []);
+
+  const fetchCountryByIP = async (): Promise<string | null> => {
+    // Try ipapi.co first
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.country_code) return data.country_code;
+      }
+    } catch (err) { }
+
+    // Fallback to ip-api.com
+    try {
+      const res = await fetch('http://ip-api.com/json/');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.countryCode) return data.countryCode;
+      }
+    } catch (err) { }
+
+    return null;
+  };
 
   const fuzzCoordinates = useCallback((lat: number, lng: number): [number, number] => {
     // 0.018 degrees is roughly 2km fuzzed offset
@@ -196,12 +228,21 @@ export default function Home() {
     const seed = localStorage.getItem('whisper_avatar_seed') || Math.random().toString();
     const storedName = localStorage.getItem('whisper_user_name');
 
+    const smartLoc = getSmartInitialLocation();
     localStorage.setItem('whisper_user_id', id);
     localStorage.setItem('whisper_avatar_seed', seed);
-    if (!storedName) { setShowUnifiedSettings(true); setCurrentUser({ id, avatarSeed: seed, name: '游客' }); }
-    else { setCurrentUser({ id, avatarSeed: seed, name: storedName }); }
 
-    const smartLoc = getSmartInitialLocation();
+    // Functional update to avoid wiping countryCode if it's already being set by async positioning
+    setCurrentUser(prev => ({
+      ...prev,
+      id,
+      avatarSeed: seed,
+      name: storedName || '游客',
+      countryCode: prev.countryCode || (smartLoc as any).countryCode // Initial fallback from timezone
+    }));
+
+    if (!storedName) setShowUnifiedSettings(true);
+
     setLocation(smartLoc);
     setChatAnchor([smartLoc.lat, smartLoc.lng]);
 
@@ -581,7 +622,12 @@ export default function Home() {
     const channel = supabase!.channel(`room_${rid}`)
       .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
         setAllMessages(prev => prev[scale].some(m => m.id === payload.id) ? prev : { ...prev, [scale]: [...prev[scale], payload] });
-        if (scale !== activeScaleRef.current) setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+        if (scale !== activeScaleRef.current) {
+          setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+          if (payload.content.includes(`@${currentUserRef.current.name}`)) {
+            setMentionCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+          }
+        }
       })
       .on('broadcast', { event: 'chat-recall' }, ({ payload }) => {
         setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.id ? { ...m, isRecalled: true } : m) }));
@@ -602,7 +648,7 @@ export default function Home() {
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now() });
+          await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
         }
         console.log(`Channel room_${rid} status:`, status);
       });
@@ -633,7 +679,12 @@ export default function Home() {
     const channel = supabase!.channel(`room_${rid}`)
       .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
         setAllMessages(prev => prev[scale].some(m => m.id === payload.id) ? prev : { ...prev, [scale]: [...prev[scale], payload] });
-        if (scale !== activeScaleRef.current) setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+        if (scale !== activeScaleRef.current) {
+          setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+          if (payload.content.includes(`@${currentUserRef.current.name}`)) {
+            setMentionCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+          }
+        }
       })
       .on('broadcast', { event: 'chat-recall' }, ({ payload }) => {
         setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.id ? { ...m, isRecalled: true } : m) }));
@@ -653,7 +704,7 @@ export default function Home() {
         setOnlineUsers(prev => ({ ...prev, [scale]: users }));
       })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now() });
+        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
         console.log(`Channel room_${rid} status:`, status);
       });
 
@@ -683,7 +734,12 @@ export default function Home() {
     const channel = supabase!.channel(`room_${rid}`)
       .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
         setAllMessages(prev => prev[scale].some(m => m.id === payload.id) ? prev : { ...prev, [scale]: [...prev[scale], payload] });
-        if (scale !== activeScaleRef.current) setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+        if (scale !== activeScaleRef.current) {
+          setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+          if (payload.content.includes(`@${currentUserRef.current.name}`)) {
+            setMentionCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
+          }
+        }
       })
       .on('broadcast', { event: 'chat-recall' }, ({ payload }) => {
         setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.id ? { ...m, isRecalled: true } : m) }));
@@ -703,7 +759,7 @@ export default function Home() {
         setOnlineUsers(prev => ({ ...prev, [scale]: users }));
       })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now() });
+        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
         console.log(`Channel room_${rid} status:`, status);
       });
 
@@ -800,6 +856,21 @@ export default function Home() {
       console.error('Send message error:', err);
     }
   };
+
+  const onTyping = useCallback(async (isTyping: boolean) => {
+    const rid = roomIds[activeScale];
+    if (!supabase || !rid || !channelsRef.current[rid]) return;
+    await channelsRef.current[rid].track({
+      user_id: currentUserRef.current.id,
+      user_name: currentUserRef.current.name,
+      avatarSeed: currentUserRef.current.avatarSeed,
+      isGM: currentUserRef.current.isGM,
+      lat: userGps ? userGps[0] : location.lat,
+      lng: userGps ? userGps[1] : location.lng,
+      onlineAt: Date.now(),
+      isTyping
+    });
+  }, [activeScale, roomIds, userGps, location]);
 
   const onRecallMessage = async (messageId: string) => {
     const rid = roomIds[activeScale];
@@ -912,7 +983,7 @@ export default function Home() {
         <div className="flex flex-col gap-3">
           <span className="text-white font-normal tracking-[0.2em] uppercase text-sm">正在请求地理位置...</span>
           <div className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl">
-            <span className="text-white/50 text-[10px] font-normal leading-relaxed uppercase tracking-widest">
+            <span className="text-white/50 text-[10px] font-normal leading-relaxed uppercase tracking-tight">
               隐私保护已激活：系统将对您的真实坐标添加约2公里的随机偏移，确保您的精确驻地不被公开。
             </span>
           </div>
@@ -937,7 +1008,7 @@ export default function Home() {
             <div className="flex flex-col gap-1 px-1">
               <div className="flex items-center gap-2">
                 <img src="/logo.png" onClick={handleLogoClick} className="w-6 h-6 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
-                <h3 className="text-white text-xs font-normal uppercase tracking-widest opacity-50">乌托邦</h3>
+                <h3 className="text-white text-xs font-normal uppercase tracking-tight opacity-50">乌托邦</h3>
               </div>
               <p className="text-white/35 text-[9px] font-normal uppercase tracking-wider">Privacy secured with 2km random offset</p>
             </div>
@@ -946,15 +1017,15 @@ export default function Home() {
               <input type="text" maxLength={12} placeholder="在这更改昵称" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white font-normal outline-none ring-2 ring-transparent focus:ring-white/10 transition-all placeholder:text-white/35 text-sm" value={tempName} onChange={(e) => setTempName(e.target.value)} autoFocus />
               <div className="grid grid-cols-2 gap-2.5 select-none">
                 <div onClick={() => setTheme('dark')} className={`py-2 px-4 rounded-xl border flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95 ${theme === 'dark' ? 'bg-white/10 border-white/20' : 'bg-transparent border-white/5 opacity-50 hover:opacity-80'}`}>
-                  <div className="w-5 h-5 rounded-full bg-[#1a1a1a] border border-white/20 shadow-[0_0_100px_rgba(255,255,255,0.1)] flex-shrink-0" /><span className="text-[11px] font-normal text-white/80 tracking-widest uppercase">深色</span>
+                  <div className="w-5 h-5 rounded-full bg-[#1a1a1a] border border-white/20 shadow-[0_0_100px_rgba(255,255,255,0.1)] flex-shrink-0" /><span className="text-[11px] font-normal text-white/80 tracking-tight uppercase">深色</span>
                 </div>
                 <div onClick={() => setTheme('light')} className={`py-2 px-4 rounded-xl border flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95 ${theme === 'light' ? 'bg-white border-white text-black' : 'bg-transparent border-white/5 opacity-50 hover:opacity-80'}`}>
-                  <div className="w-5 h-5 rounded-full bg-white border border-gray-200 shadow-sm flex-shrink-0" /><span className={`text-[11px] font-normal tracking-widest uppercase ${theme === 'light' ? 'text-black' : 'text-white/80'}`}>浅色</span>
+                  <div className="w-5 h-5 rounded-full bg-white border border-gray-200 shadow-sm flex-shrink-0" /><span className={`text-[11px] font-normal tracking-tight uppercase ${theme === 'light' ? 'text-black' : 'text-white/80'}`}>浅色</span>
                 </div>
               </div>
 
               <div className="flex flex-col gap-2 p-1">
-                <div className="flex items-center justify-between text-[11px] font-normal text-white/40 uppercase tracking-widest px-1">
+                <div className="flex items-center justify-between text-[11px] font-normal text-white/40 uppercase tracking-tight px-1">
                   <span>文字大小</span>
                   <span>{fontSize}px</span>
                 </div>
@@ -976,7 +1047,7 @@ export default function Home() {
               <div className="p-3 bg-white/5 border border-white/10 rounded-2xl flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                  <span className="text-[10px] font-normal text-white/70 uppercase tracking-widest">隐私保护说明</span>
+                  <span className="text-[10px] font-normal text-white/70 uppercase tracking-tight">隐私保护说明</span>
                 </div>
                 <p className="text-[10px] text-white/45 font-normal leading-relaxed lowercase tracking-wide">
                   为了保护您的驻地隐私，系统已自动为您的实时位置添加约 **2公里** 的随机偏移。这意味着即使在"地区"频道中，其他用户也无法精确推断您的真实住所。
@@ -998,18 +1069,18 @@ export default function Home() {
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-3">
                   <img src="/logo.png" onClick={handleLogoClick} className="w-8 h-8 object-contain cursor-pointer active:scale-90 transition-transform" alt="Logo" />
-                  <h2 className="text-lg font-normal text-white tracking-widest uppercase">进化建议看板</h2>
+                  <h2 className="text-lg font-normal text-white tracking-tight uppercase">进化建议看板</h2>
                 </div>
-                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className="text-[10px] font-normal text-white/50 uppercase tracking-widest">实时接收其他特工建议</span></div>
+                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /><span className="text-[10px] font-normal text-white/50 uppercase tracking-tight">实时接收其他特工建议</span></div>
               </div>
               <button onClick={() => setShowSuggestionPanel(false)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-all border border-white/5">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
             <div ref={suggestionScrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth custom-scrollbar overscroll-contain">
-              {suggestions.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-white/20 underline uppercase tracking-widest">暂无建议</div> : suggestions.map((s, idx) => (
+              {suggestions.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-white/20 underline uppercase tracking-tight">暂无建议</div> : suggestions.map((s, idx) => (
                 <div key={s.id || idx} className={`flex flex-col gap-2 ${s.user_id === currentUser.id ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-2 px-1"><span className="text-[10px] font-normal text-white/40 uppercase tracking-widest">{s.user_id === currentUser.id ? '我' : s.user_name}</span><span className="text-[8px] font-normal text-white/20">{s.timestamp ? formatDistanceToNow(new Date(s.timestamp), { addSuffix: true, locale: zhCN }) : '刚刚'}</span></div>
+                  <div className="flex items-center gap-2 px-1"><span className="text-[10px] font-normal text-white/40 uppercase tracking-tighter">{s.user_id === currentUser.id ? '我' : s.user_name}</span><span className="text-[8px] font-normal text-white/20 tabular-nums lowercase">{s.timestamp ? new Date(s.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '刚刚'}</span></div>
                   <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] font-normal leading-relaxed border shadow-sm ${s.user_id === currentUser.id ? 'bg-white/15 border-white/30 text-white rounded-tr-none' : 'bg-white/5 border-white/10 text-white/80 rounded-tl-none'}`}>{s.content}</div>
                 </div>
               ))}
@@ -1031,7 +1102,7 @@ export default function Home() {
                 <svg className="w-6 h-6 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
               </div>
               <h3 className="text-white text-base font-normal uppercase tracking-[0.3em]">身份验证</h3>
-              <p className="text-white/40 text-[12px] uppercase font-normal tracking-widest text-center">输入秘密协议码以激活超级权限</p>
+              <p className="text-white/40 text-[12px] uppercase font-normal tracking-tight text-center">输入秘密协议码以激活超级权限</p>
             </div>
             <form onSubmit={handleGmLogin} className="flex flex-col gap-4">
               <input
@@ -1043,8 +1114,8 @@ export default function Home() {
                 autoFocus
               />
               <div className="flex gap-2">
-                <button type="button" onClick={() => { setShowGmPrompt(false); setGmPassword(''); }} className="flex-1 py-3 bg-white/5 text-white/40 font-normal uppercase tracking-widest rounded-xl text-[12px] border border-white/5">关闭</button>
-                <button type="submit" disabled={isGmLoggingIn} className="flex-1 py-3 bg-white text-black font-normal uppercase tracking-widest rounded-xl text-[12px] shadow-xl active:scale-95 transition-all">{isGmLoggingIn ? '验证中...' : '提交'}</button>
+                <button type="button" onClick={() => { setShowGmPrompt(false); setGmPassword(''); }} className="flex-1 py-3 bg-white/5 text-white/40 font-normal uppercase tracking-tight rounded-xl text-[12px] border border-white/5">关闭</button>
+                <button type="submit" disabled={isGmLoggingIn} className="flex-1 py-3 bg-white text-black font-normal uppercase tracking-tight rounded-xl text-[12px] shadow-xl active:scale-95 transition-all">{isGmLoggingIn ? '验证中...' : '提交'}</button>
               </div>
             </form>
           </div>
@@ -1147,13 +1218,13 @@ export default function Home() {
             <div className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl p-1 rounded-full border border-white/10 shadow-2xl flex items-center">
               {[{ label: '世界', value: ScaleLevel.WORLD }, { label: '城市', value: ScaleLevel.CITY }, { label: '地区', value: ScaleLevel.DISTRICT }].map(tab => {
                 const isActive = activeScale === tab.value;
-                return <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`flex-1 h-full rounded-full text-[13px] font-normal tracking-widest uppercase transition-all duration-500 ${isActive ? 'text-white bg-[#333333] shadow-lg' : 'text-white/40'}`}>{tab.label}</button>;
+                return <button key={tab.value} onClick={() => onTabChange(tab.value)} className={`flex-1 h-full rounded-full text-[13px] font-normal tracking-tight uppercase transition-all duration-500 ${isActive ? 'text-white bg-[#333333] shadow-lg' : 'text-white/40'}`}>{tab.label}</button>;
               })}
             </div>
             <button onClick={() => { setTempName(currentUser.name === '游客' ? '' : currentUser.name); setShowUnifiedSettings(true); }} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/50 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
           </div>
           <div className="w-full max-w-[360px] relative flex items-center justify-center">
-            <button onClick={() => setIsChatOpen(true)} className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl rounded-full border border-white/10 shadow-2xl flex items-center justify-center text-white font-black uppercase tracking-[0.4em] text-[13px] active:scale-95 transition-all">恢复聊天</button>
+            <button onClick={() => setIsChatOpen(true)} className="w-full max-w-[260px] h-12 bg-[#1a1a1a]/90 backdrop-blur-3xl rounded-full border border-white/10 shadow-2xl flex items-center justify-center text-white font-normal uppercase tracking-[0.4em] text-[13px] active:scale-95 transition-all">恢复聊天</button>
             <button onClick={handleReturnToUser} className="absolute right-0 w-12 h-12 rounded-full bg-[#1a1a1a]/90 backdrop-blur-3xl border border-white/10 text-white/50 hover:text-white flex items-center justify-center shadow-2xl active:scale-90 transition-all"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" /></svg></button>
           </div>
         </div>
@@ -1203,6 +1274,9 @@ export default function Home() {
           onUpdateUser={(data) => { if (data.name) { setCurrentUser(prev => ({ ...prev, name: data.name! })); localStorage.setItem('whisper_user_name', data.name!); } }}
           theme={theme}
           fontSize={fontSize}
+          mentionCounts={mentionCounts}
+          onTyping={onTyping}
+          typingUsers={onlineUsers[activeScale]?.filter(u => u.isTyping && u.user_id !== currentUser.id).map(u => u.user_name)}
           onlineCounts={{
             [ScaleLevel.DISTRICT]: onlineUsers[ScaleLevel.DISTRICT].length,
             [ScaleLevel.CITY]: onlineUsers[ScaleLevel.CITY].length,

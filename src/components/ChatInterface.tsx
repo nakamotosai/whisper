@@ -6,6 +6,14 @@ import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { getCountryNameCN } from '@/lib/spatialService';
 
+const formatTimeSimple = (date: Date) => {
+    try {
+        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    } catch (e) {
+        return '';
+    }
+};
+
 interface ChatInterfaceProps {
     scale: ScaleLevel;
     roomId: string;
@@ -32,6 +40,9 @@ interface ChatInterfaceProps {
     onDeleteMessage?: (messageId: string) => Promise<void>;
     onUpdateAnyUserName?: (userId: string, newName: string) => Promise<void>;
     fontSize?: number;
+    mentionCounts?: Record<ScaleLevel, number>;
+    onTyping?: (isTyping: boolean) => void;
+    typingUsers?: string[];
 }
 
 const SCALE_OPTIONS_TRANS = { WORLD: '世界', CITY: '城市', DISTRICT: '地区' };
@@ -40,7 +51,9 @@ const COMMON_EMOJIS = ['😂', '😍', '🤔', '👍', '🔥', '✨', '🎉', '�
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     scale, roomId, messages, unreadCounts, user, onSendMessage, onUploadImage, onUploadVoice, onRecallMessage,
     fetchLiveStreams, fetchSharedImages, isOpen, onToggle, onTabChange, onUpdateUser, onOpenSettings, isMobile = false, locationName, theme = 'dark', onlineCounts,
-    onLoadMore, hasMore = false, onDeleteMessage, onUpdateAnyUserName, fontSize = 16
+    onLoadMore, hasMore = false, onDeleteMessage, onUpdateAnyUserName, fontSize = 16,
+    mentionCounts = { [ScaleLevel.DISTRICT]: 0, [ScaleLevel.CITY]: 0, [ScaleLevel.WORLD]: 0 },
+    onTyping, typingUsers = []
 }) => {
     const [inputText, setInputText] = useState('');
     const [isSending, setIsSending] = useState(false);
@@ -62,6 +75,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const isTypingRef = useRef(false);
     const recordingStartTimeRef = useRef<number>(0);
     const audioObjRef = useRef<HTMLAudioElement | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -161,6 +176,25 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             return () => document.removeEventListener('click', handleClickOutside);
         }
     }, [activeMenuId, showEmojiPicker]);
+
+    useEffect(() => {
+        if (!onTyping || !isOpen) return;
+        if (inputText.length > 0) {
+            if (!isTypingRef.current) {
+                isTypingRef.current = true;
+                onTyping(true);
+            }
+            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+            typingTimeoutRef.current = setTimeout(() => {
+                isTypingRef.current = false;
+                onTyping(false);
+            }, 2000);
+        } else if (isTypingRef.current) {
+            isTypingRef.current = false;
+            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+            onTyping(false);
+        }
+    }, [inputText, isOpen, onTyping]);
 
     const handleScroll = async () => {
         if (!scrollRef.current) return;
@@ -271,9 +305,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         if (idx !== -1) setViewerIndex(idx);
     };
 
-    const formatTimeSimple = (date: Date) => {
-        return formatDistanceToNow(date, { addSuffix: true, locale: zhCN }).replace('大约', '');
-    };
+
 
     const handleMessageClick = (msg: Message, e: React.MouseEvent) => {
         if (msg.isRecalled) return;
@@ -300,12 +332,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             const hasUnread = unreadCounts[tab.value] > 0;
                             return (
                                 <button key={tab.value} onClick={() => onTabChange(tab.value)}
-                                    className={`flex-1 h-7 rounded-[14px] text-[12px] font-normal tracking-widest transition-all duration-500 uppercase flex items-center justify-center relative
+                                    className={`flex-1 h-7 rounded-[14px] text-[12px] font-normal tracking-tight transition-all duration-500 uppercase flex items-center justify-center relative
                                         ${isActive ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/40 hover:text-white/60')}`}>
                                     <span className="relative z-20">{tab.label}</span>
-                                    {hasUnread && !isActive && (
+                                    {((mentionCounts[tab.value] || 0) > 0) && !isActive ? (
+                                        <div className="absolute -top-0.5 -right-0.5 min-w-[12px] h-3 px-0.5 rounded-full bg-red-500 border border-white/20 flex items-center justify-center text-[8px] text-white font-bold animate-pulse z-30">
+                                            @
+                                        </div>
+                                    ) : (hasUnread && !isActive && (
                                         <div className="absolute top-1 right-2 w-1 h-1 rounded-full bg-red-400 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
-                                    )}
+                                    ))}
                                 </button>
                             );
                         })}
@@ -321,7 +357,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     <div className={`flex-1 flex items-center backdrop-blur-md p-1 h-9 rounded-[18px] border transition-colors ${theme === 'light' ? 'bg-white/40 border-black/5' : 'bg-[#1a1a1a]/50 border-white/5'}`}>
                         {['CHAT', 'IMAGES'].map(tab => (
                             <button key={tab} onClick={() => setActiveSubTab(tab as SubTabType)}
-                                className={`flex-1 h-7 rounded-[14px] text-[12px] font-normal tracking-widest transition-all duration-500 uppercase flex items-center justify-center relative
+                                className={`flex-1 h-7 rounded-[14px] text-[12px] font-normal tracking-tight transition-all duration-500 uppercase flex items-center justify-center relative
                                     ${activeSubTab === tab ? (theme === 'light' ? 'text-gray-900 bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'text-white bubble-rainbow shadow-[0_4px_20px_rgba(0,0,0,0.4)]') : (theme === 'light' ? 'text-black/30 hover:text-black/60' : 'text-white/40 hover:text-white/60')}`}>
                                 <span className="relative z-20">{tab === 'CHAT' ? '动态' : '照片'}</span>
                             </button>
@@ -361,13 +397,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 }}
             >
                 {activeSubTab === 'CHAT' && (
-                    <div className="flex flex-col gap-3.5">
+                    <div className="flex flex-col gap-1.5 pb-4">
                         {hasMore && (
                             <div className="flex justify-center py-4">
                                 {isLoadingMore ? (
                                     <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
                                 ) : (
-                                    <span className="text-[12px] font-normal text-white/20 uppercase tracking-widest">
+                                    <span className="text-[12px] font-normal text-white/20 uppercase tracking-tight">
                                         继续滑动加载更多历史消息
                                     </span>
                                 )}
@@ -375,7 +411,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         )}
                         {!hasMore && messages.length > 0 && (
                             <div className="flex justify-center py-4">
-                                <span className="text-[12px] font-normal text-white/10 uppercase tracking-widest">
+                                <span className="text-[12px] font-normal text-white/10 uppercase tracking-tight">
                                     没有更多历史消息了
                                 </span>
                             </div>
@@ -404,14 +440,30 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             }
 
                             return (
-                                <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-700`}>
+                                <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-700 ${isFirstInGroup ? 'mt-3' : 'mt-1'}`}>
                                     {isFirstInGroup && (
-                                        <div className={`mb-0.5 px-1 text-[13px] font-normal uppercase tracking-widest ${isOwn ? (theme === 'light' ? 'text-black/40' : 'text-white/55') : (theme === 'light' ? 'text-black/30' : 'text-white/40')}`}>
-                                            <span className={msg.isGM ? 'text-rainbow-scroll scale-110 origin-left inline-block' : ''}>
+                                        <div className={`mb-1 px-1 text-[11px] font-normal uppercase tracking-tighter flex items-center gap-1.5 ${isOwn ? (theme === 'light' ? 'text-black/40' : 'text-white/55') : (theme === 'light' ? 'text-black/30' : 'text-white/40')}`}>
+                                            <span
+                                                className={`cursor-pointer transition-opacity hover:opacity-70 ${msg.isGM ? 'text-rainbow-scroll scale-110 origin-left inline-block' : ''}`}
+                                                onClick={() => {
+                                                    const mention = `@${msg.userName} `;
+                                                    if (!inputText.includes(mention)) {
+                                                        setInputText(prev => prev + mention);
+                                                        inputRef.current?.focus();
+                                                    }
+                                                }}
+                                            >
                                                 {msg.userName || `NODE_${msg.userId.substring(0, 4)}`}
                                             </span>
-                                            {msg.countryCode && (
-                                                <span className="ml-1 opacity-50 font-normal"> - {getCountryNameCN(msg.countryCode)}</span>
+                                            {(msg.countryCode || true) && (
+                                                <>
+                                                    <span className="opacity-40 mx-0.5">·</span>
+                                                    <div className="flex items-center gap-1 opacity-40 tabular-nums">
+                                                        {msg.countryCode && <span>{msg.countryCode}</span>}
+                                                        {msg.countryCode && <span className="mx-0.5">·</span>}
+                                                        <span>{formatTimeSimple(new Date(msg.timestamp))}</span>
+                                                    </div>
+                                                </>
                                             )}
                                         </div>
                                     )}
@@ -494,7 +546,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                         className="font-normal leading-tight block py-2 whitespace-pre-wrap"
                                                         style={{ fontSize: `${fontSize}px` }}
                                                     >
-                                                        {msg.content}
+                                                        {msg.content.split(/(@\S+)/g).map((part, i) =>
+                                                            part.startsWith('@') ? (
+                                                                <span key={i} className="text-blue-400 font-normal">{part}</span>
+                                                            ) : part
+                                                        )}
                                                     </span>
                                                 )}
                                             </div>
@@ -513,7 +569,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                         setInputMode('text');
                                                         setTimeout(() => inputRef.current?.focus(), 50);
                                                     }}
-                                                    className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                                                    className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
                                                 >
                                                     引用
                                                 </button>
@@ -524,7 +580,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                             onRecallMessage(msg.id);
                                                             setActiveMenuId(null);
                                                         }}
-                                                        className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                                                        className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
                                                     >
                                                         撤回
                                                     </button>
@@ -538,7 +594,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                                 if (newName && onUpdateAnyUserName) onUpdateAnyUserName(msg.userId, newName);
                                                                 setActiveMenuId(null);
                                                             }}
-                                                            className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-widest uppercase transition-all active:scale-95 shadow-2xl bg-amber-500/90 text-white`}
+                                                            className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl bg-amber-500/90 text-white`}
                                                         >
                                                             改名
                                                         </button>
@@ -548,7 +604,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                                 if (confirm('确定要永久抹除这条记录吗？') && onDeleteMessage) onDeleteMessage(msg.id);
                                                                 setActiveMenuId(null);
                                                             }}
-                                                            className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-widest uppercase transition-all active:scale-95 shadow-2xl bg-red-500/90 text-white`}
+                                                            className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl bg-red-500/90 text-white`}
                                                         >
                                                             抹除
                                                         </button>
@@ -559,7 +615,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                                     onRecallMessage(msg.id);
                                                                     setActiveMenuId(null);
                                                                 }}
-                                                                className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-widest uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
+                                                                className={`px-3 py-1.5 rounded-xl backdrop-blur-3xl border border-white/20 text-[11px] font-normal tracking-tight uppercase transition-all active:scale-95 shadow-2xl ${theme === 'light' ? 'bg-white/90 text-black' : 'bg-black/90 text-white'}`}
                                                             >
                                                                 撤回
                                                             </button>
@@ -570,11 +626,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         )}
                                     </div>
 
-                                    {isLastInGroup && (
-                                        <span className={`mt-0.5 px-1 text-[11px] font-normal font-mono tracking-widest uppercase ${theme === 'light' ? 'text-black/40' : 'text-white/45'}`}>
-                                            {formatTimeSimple(new Date(msg.timestamp))}
-                                        </span>
-                                    )}
                                 </div>
                             );
                         })}
@@ -598,7 +649,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         className={`pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-2xl border shadow-[0_10px_30px_rgba(0,0,0,0.3)] transition-all active:scale-95 ${theme === 'light' ? 'bg-white/90 border-black/5 text-black' : 'bg-black/80 border-white/10 text-white'}`}
                     >
                         <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
-                        <span className="text-[11px] font-normal tracking-widest uppercase">有新信息</span>
+                        <span className="text-[11px] font-normal tracking-tight uppercase">有新信息</span>
                         <svg className="w-3.5 h-3.5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7-7-7" />
                         </svg>
@@ -608,10 +659,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
             {activeSubTab === 'CHAT' && (
                 <div className={`shrink-0 z-20 ${isMobile ? 'px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))]' : 'p-6 pt-1'}`}>
+                    {typingUsers.length > 0 && (
+                        <div className="px-4 flex items-center gap-2 mb-1.5 animate-in fade-in slide-in-from-bottom-1 duration-500">
+                            <div className="flex gap-1 items-center py-1">
+                                <div className="w-1 h-1 rounded-full bg-white/40 animate-bounce" />
+                                <div className="w-1 h-1 rounded-full bg-white/40 animate-bounce [animation-delay:0.2s]" />
+                                <div className="w-1 h-1 rounded-full bg-white/40 animate-bounce [animation-delay:0.4s]" />
+                            </div>
+                            <span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/30' : 'text-white/30'}`}>
+                                {typingUsers.length === 1 ? `${typingUsers[0]} 正在输入...` : '多人正在输入...'}
+                            </span>
+                        </div>
+                    )}
                     {quotedMessage && (
                         <div className={`mb-2 p-2 rounded-xl backdrop-blur-xl border flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 duration-300 ${theme === 'light' ? 'bg-black/5 border-black/5 text-black' : 'bg-white/5 border-white/10 text-white'}`}>
                             <div className="flex-1 min-w-0">
-                                <div className="text-[12px] font-normal opacity-40 uppercase tracking-widest mb-0.5 truncate">引用 {quotedMessage.userName}</div>
+                                <div className="text-[12px] font-normal opacity-40 uppercase tracking-tight mb-0.5 truncate">引用 {quotedMessage.userName}</div>
                                 <div className="text-[14px] opacity-80 truncate">{quotedMessage.content}</div>
                             </div>
                             <button onClick={() => setQuotedMessage(null)} className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:bg-black/10 transition-colors">

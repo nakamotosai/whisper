@@ -88,4 +88,5 @@ export interface UserPresence {
     lng: number;
     onlineAt: number;
     isGM?: boolean;
+    isTyping?: boolean;
 }
