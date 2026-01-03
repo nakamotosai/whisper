@@ -263,15 +263,17 @@ const HoverHexagon = memo(({ hoveredH3Index, userH3Index, zoom }: {
 });
 
 // Mouse hover handler - tracks mouse position and converts to H3 index
-const MouseHoverHandler = ({ onHover, zoom }: {
+const MouseHoverHandler = ({ onHover, zoom, isMobile }: {
     onHover: (h3Index: string | null) => void,
-    zoom: number
+    zoom: number,
+    isMobile?: boolean
 }) => {
     const map = useMap();
     const currentScale = getScaleLevel(zoom);
     const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
+        if (isMobile) return;
         if (currentScale === ScaleLevel.WORLD) {
             onHover(null);
             return;
@@ -304,7 +306,7 @@ const MouseHoverHandler = ({ onHover, zoom }: {
             map.off('mouseout', handleMouseOut);
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };
-    }, [map, currentScale, onHover]);
+    }, [map, currentScale, onHover, isMobile]);
 
     return null;
 };
@@ -387,6 +389,7 @@ interface MapBackgroundProps {
     activeRoomId?: string;
     onlineUsers?: UserPresence[];
     currentUserId?: string;
+    isMobile?: boolean;
 }
 
 export const MapBackground = memo(({
@@ -401,7 +404,8 @@ export const MapBackground = memo(({
     onHexClick,
     activeRoomId,
     onlineUsers,
-    currentUserId
+    currentUserId,
+    isMobile
 }: MapBackgroundProps) => {
     const [zoom, setZoom] = useState(5);
     const [isMoving, setIsMoving] = useState(false);
@@ -512,11 +516,11 @@ export const MapBackground = memo(({
                 <MapEvents onMove={onLocationChange} onZoomChange={setZoom} onInteraction={() => onLocationChange({ lat: 0, lng: 0, zoom: 0, isInteraction: true })} onMoveStateChange={setIsMoving} isControlled={forcedZoom !== null} />
                 <MapController center={initialPosition} forcedZoom={forcedZoom} onAnimationComplete={onAnimationComplete} />
                 <DiscreteZoomController />
-                <MouseHoverHandler onHover={handleMouseHover} zoom={zoom} />
+                <MouseHoverHandler onHover={handleMouseHover} zoom={zoom} isMobile={isMobile} />
                 <ActivityLayer fetchActivity={fetchActivity} onMarkerClick={onMarkerClick} zoom={zoom} isMoving={isMoving} />
 
                 {/* Hover hexagon - shows on mouse move */}
-                <HoverHexagon hoveredH3Index={hoveredH3Index} userH3Index={userH3Index} zoom={zoom} />
+                {!isMobile && <HoverHexagon hoveredH3Index={hoveredH3Index} userH3Index={userH3Index} zoom={zoom} />}
 
                 {/* Active room markers - shows center dots for existing chatrooms */}
                 <ActiveRoomMarkers

@@ -554,7 +554,7 @@ export default function Home() {
     alert('已成功退出超级权限，您现在是普通用户。');
   };
 
-  const handleUpdateAnyUserName = async (userId: string, newName: string) => {
+  const handleUpdateAnyUserName = useCallback(async (userId: string, newName: string) => {
     if (!currentUser.isGM || !supabase) return;
 
     // Uniqueness check for GM action too
@@ -584,9 +584,9 @@ export default function Home() {
       console.error('Update name failed:', err);
       alert('更改失败');
     }
-  };
+  }, [currentUser.isGM, onlineUsers, roomIds, activeScale]);
 
-  const handleDeleteMessage = async (messageId: string) => {
+  const handleDeleteMessage = useCallback(async (messageId: string) => {
     if (!currentUser.isGM || !supabase) return;
     try {
       const { error } = await supabase.from('messages').delete().eq('id', messageId);
@@ -596,7 +596,7 @@ export default function Home() {
     } catch (err) {
       alert('删除失败');
     }
-  };
+  }, [currentUser.isGM]);
 
   const onLoadMore = useCallback(async (scale: ScaleLevel) => {
     const rid = roomIds[scale];
@@ -931,7 +931,7 @@ export default function Home() {
     } finally { setIsSubmittingSuggestion(false); }
   };
 
-  const onSendMessage = async (content: string, replyTo?: Message['replyTo']) => {
+  const onSendMessage = useCallback(async (content: string, replyTo?: Message['replyTo']) => {
     const rid = roomIds[activeScale];
     if (!supabase || !rid) return;
     const msg = {
@@ -975,7 +975,7 @@ export default function Home() {
     } catch (err) {
       console.error('Send message error:', err);
     }
-  };
+  }, [activeScale, roomIds, currentUser]);
 
   const onTyping = useCallback(async (isTyping: boolean) => {
     const rid = roomIds[activeScale];
@@ -992,7 +992,7 @@ export default function Home() {
     });
   }, [activeScale, roomIds, userGps, location]);
 
-  const onRecallMessage = async (messageId: string) => {
+  const onRecallMessage = useCallback(async (messageId: string) => {
     const rid = roomIds[activeScale];
     if (!supabase || !rid) return;
     setAllMessages(prev => ({ ...prev, [activeScale]: prev[activeScale].map(m => m.id === messageId ? { ...m, isRecalled: true } : m) }));
@@ -1001,9 +1001,9 @@ export default function Home() {
       if (error) throw error;
       if (channelsRef.current[rid]) await channelsRef.current[rid].send({ type: 'broadcast', event: 'chat-recall', payload: { id: messageId } });
     } catch (err) { }
-  };
+  }, [activeScale, roomIds]);
 
-  const onUploadImage = async (file: File, replyTo?: Message['replyTo']) => {
+  const onUploadImage = useCallback(async (file: File, replyTo?: Message['replyTo']) => {
     const rid = roomIds[activeScale];
     if (!supabase || !rid) return;
     const tempId = Math.random().toString(36).substring(2, 11);
@@ -1043,9 +1043,9 @@ export default function Home() {
       console.error('Image upload error:', err);
       setAllMessages(prev => ({ ...prev, [activeScale]: prev[activeScale].filter(m => m.id !== tempId) }));
     }
-  };
+  }, [activeScale, roomIds, currentUser]);
 
-  const onUploadVoice = async (blob: Blob, duration: number, replyTo?: Message['replyTo']) => {
+  const onUploadVoice = useCallback(async (blob: Blob, duration: number, replyTo?: Message['replyTo']) => {
     const rid = roomIds[activeScale];
     if (!supabase || !rid) return;
     try {
@@ -1090,7 +1090,29 @@ export default function Home() {
     } catch (err) {
       console.error('Voice upload error:', err);
     }
-  };
+  }, [activeScale, roomIds, currentUser]);
+
+  const fetchLiveStreams = useCallback(async () => [], []);
+
+  const fetchSharedImages = useCallback(async (rid: string) => {
+    if (!supabase || !rid) return [];
+    const { data } = await supabase.from('messages')
+      .select('*')
+      .eq('room_id', rid)
+      .eq('type', 'image')
+      .order('timestamp', { ascending: false });
+    if (!data) return [];
+    return data.map((m: any) => ({
+      id: m.id,
+      url: m.content,
+      caption: '',
+      author: m.user_name || `NODE_${m.user_id.substring(0, 4)}`,
+      likes: 0,
+      lat: 0,
+      lng: 0,
+      timestamp: new Date(m.timestamp).getTime()
+    }));
+  }, []);
 
   if (!mounted) return <div className="h-screen w-screen bg-black" />;
 
@@ -1280,6 +1302,7 @@ export default function Home() {
           activeRoomId={roomIds[activeScale]}
           onlineUsers={onlineUsers[activeScale]}
           currentUserId={currentUser.id}
+          isMobile={isMobile}
         />
       </div>
 
@@ -1401,26 +1424,8 @@ export default function Home() {
           onUploadImage={onUploadImage}
           onUploadVoice={onUploadVoice}
           onRecallMessage={onRecallMessage}
-          fetchLiveStreams={async () => []}
-          fetchSharedImages={async (rid: string) => {
-            if (!supabase || !rid) return [];
-            const { data } = await supabase.from('messages')
-              .select('*')
-              .eq('room_id', rid)
-              .eq('type', 'image')
-              .order('timestamp', { ascending: false });
-            if (!data) return [];
-            return data.map((m: any) => ({
-              id: m.id,
-              url: m.content,
-              caption: '',
-              author: m.user_name || `NODE_${m.user_id.substring(0, 4)}`,
-              likes: 0,
-              lat: 0,
-              lng: 0,
-              timestamp: new Date(m.timestamp).getTime()
-            }));
-          }}
+          fetchLiveStreams={fetchLiveStreams}
+          fetchSharedImages={fetchSharedImages}
           isOpen={!isMobile || isChatOpen}
           onToggle={() => setIsChatOpen(false)}
           isMobile={isMobile}

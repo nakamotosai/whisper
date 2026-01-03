@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType } from '@/types';
@@ -250,7 +250,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         };
     }, [isMobile, activeSubTab]);
 
-    const handleScroll = async () => {
+    const handleScroll = useCallback(async () => {
         if (!scrollRef.current) return;
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
         const absScrollTop = Math.abs(scrollTop);
@@ -268,7 +268,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             }
             setIsLoadingMore(false);
         }
-    };
+    }, [hasMore, isLoadingMore, activeSubTab, onLoadMore, scale]);
 
     const startRecording = async () => {
         if (isRecording) return;
@@ -497,7 +497,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 {activeSubTab === 'CHAT' && (
                     <div className="flex flex-col-reverse relative">
                         {/* Newest messages at the bottom visually (start of flex-col-reverse list) */}
-                        {[...messages].reverse().map((msg, reversedIndex) => {
+                        {useMemo(() => [...messages].reverse(), [messages]).map((msg, reversedIndex) => {
                             const index = messages.length - 1 - reversedIndex;
                             const prevMsg = index > 0 ? messages[index - 1] : null;
                             const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
