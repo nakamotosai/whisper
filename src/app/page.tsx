@@ -328,7 +328,12 @@ export default function Home() {
     window.visualViewport?.addEventListener('scroll', handleResize);
     handleResize();
 
-    const handleVisibilityChange = () => { if (document.visibilityState === 'visible') setReconnectCounter(prev => prev + 1); };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setReconnectCounter(prev => prev + 1);
+        setUnreadCounts(prev => ({ ...prev, [activeScaleRef.current]: 0 }));
+      }
+    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const storedTheme = localStorage.getItem('whisper_theme') as ThemeType;
@@ -580,7 +585,8 @@ export default function Home() {
           const updated = [...prev[scale], payload].slice(-MAX_MESSAGES);
           return { ...prev, [scale]: updated };
         });
-        if (scale !== activeScaleRef.current) {
+        const isAppHidden = typeof document !== 'undefined' && document.visibilityState !== 'visible';
+        if (scale !== activeScaleRef.current || isAppHidden) {
           setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
           if (payload.content.includes(`@${currentUserRef.current.name}`)) {
             setMentionCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
@@ -653,7 +659,8 @@ export default function Home() {
           const updated = [...prev[scale], payload].slice(-MAX_MESSAGES);
           return { ...prev, [scale]: updated };
         });
-        if (scale !== activeScaleRef.current) {
+        const isAppHidden = typeof document !== 'undefined' && document.visibilityState !== 'visible';
+        if (scale !== activeScaleRef.current || isAppHidden) {
           setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
           if (payload.content.includes(`@${currentUserRef.current.name}`)) {
             setMentionCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
@@ -724,7 +731,8 @@ export default function Home() {
           const updated = [...prev[scale], payload].slice(-MAX_MESSAGES);
           return { ...prev, [scale]: updated };
         });
-        if (scale !== activeScaleRef.current) {
+        const isAppHidden = typeof document !== 'undefined' && document.visibilityState !== 'visible';
+        if (scale !== activeScaleRef.current || isAppHidden) {
           setUnreadCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));
           if (payload.content.includes(`@${currentUserRef.current.name}`)) {
             setMentionCounts(prev => ({ ...prev, [scale]: prev[scale] + 1 }));

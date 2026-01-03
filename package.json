@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "dev:host": "next dev --webpack -H 0.0.0.0",
+    "dev:https": "next dev --webpack --experimental-https -H 0.0.0.0",
     "build": "node scripts/generate-version.js && next build --webpack",
     "start": "next start",
     "lint": "eslint"

@@ -137,6 +137,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const lastMessageId = useRef<string | null>(null);
     const lastRoomId = useRef<string | null>(null);
     const lastSubTab = useRef<SubTabType>('CHAT');
+    const isPressedRef = useRef(false);
 
     const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
         if (scrollRef.current) {
@@ -319,16 +320,31 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     const startRecording = async () => {
         if (isRecording) return;
+        isPressedRef.current = true;
+        const startTime = Date.now();
+
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+            // Detect if a permission prompt was shown (usually > 500ms)
+            // or if the user has already released the button
+            const elapsed = Date.now() - startTime;
+            if (elapsed > 500 || !isPressedRef.current) {
+                stream.getTracks().forEach(t => t.stop());
+                isPressedRef.current = false;
+                return;
+            }
+
             const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
             const recorder = new MediaRecorder(stream, { mimeType });
             mediaRecorderRef.current = recorder;
             audioChunksRef.current = [];
             recordingStartTimeRef.current = Date.now();
+
             recorder.ondataavailable = (e) => {
                 if (e.data.size > 0) audioChunksRef.current.push(e.data);
             };
+
             recorder.onstop = async () => {
                 const duration = Math.round((Date.now() - recordingStartTimeRef.current) / 1000);
                 const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
@@ -341,6 +357,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 }
                 stream.getTracks().forEach(t => t.stop());
             };
+
             recorder.start();
             setIsRecording(true);
             timerRef.current = setInterval(() => {
@@ -348,14 +365,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             }, 1000);
         } catch (err) {
             console.error("Recording fail:", err);
+            isPressedRef.current = false;
         }
     };
 
     const stopRecording = () => {
-        if (!isRecording) return;
-        mediaRecorderRef.current?.stop();
+        isPressedRef.current = false;
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+
         setIsRecording(false);
-        if (timerRef.current) clearInterval(timerRef.current);
     };
 
     const handleSend = async (e?: React.FormEvent) => {
