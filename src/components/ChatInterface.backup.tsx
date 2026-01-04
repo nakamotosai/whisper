@@ -317,7 +317,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
         if (!isClimbingMode) {
             // Normal mode behavior
-            // Hide prompt if user scrolls back down (away from top/history)
             if (absScrollTop < 200) {
                 setShowNewMessageTip(false);
                 loadMoreCountRef.current = 0; // Reset counter when near bottom
@@ -325,10 +324,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 if (activeSubTab === 'CHAT' && onRead) {
                     onRead(Date.now());
                 }
-            } else if (absScrollTop < scrollHeight - clientHeight - 300) {
-                // Also hide prompt if user is just scrolling in the middle, away from the trigger zone
-                // But keep loadMoreCountRef to not require 2 fresh pulls if they go back up immediately
-                setShowClimbingPrompt(false);
             }
 
             // Trigger load more when scrolling up (towards older messages)

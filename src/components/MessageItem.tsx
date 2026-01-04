@@ -1,13 +1,6 @@
 import React, { memo } from 'react';
 import { Message, User, ThemeType } from '@/types';
-
-const formatTimeSimple = (date: Date) => {
-    try {
-        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
-    } catch (e) {
-        return '';
-    }
-};
+import { formatTimeSimple } from '@/lib/utils';
 
 interface MessageItemProps {
     msg: Message;
@@ -43,6 +36,8 @@ export const MessageItem = memo(({
 
     const longPressTimer = React.useRef<NodeJS.Timeout | null>(null);
     const isMoving = React.useRef(false);
+    // Track touch start position for better scroll detection
+    const touchStartPos = React.useRef<{ x: number, y: number } | null>(null);
 
     const handleShowMenu = (e: React.MouseEvent | React.PointerEvent | React.TouchEvent) => {
         if (msg.isRecalled) return;
@@ -52,11 +47,16 @@ export const MessageItem = memo(({
 
     const handleTouchStart = (e: React.TouchEvent) => {
         isMoving.current = false;
+        // Record touch start position
+        const touch = e.touches[0];
+        touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+
+        // Increased threshold from 600ms to 800ms to reduce accidental triggers
         longPressTimer.current = setTimeout(() => {
             if (!isMoving.current) {
                 handleShowMenu(e);
             }
-        }, 600);
+        }, 800);
     };
 
     const handleTouchEnd = () => {
@@ -64,13 +64,22 @@ export const MessageItem = memo(({
             clearTimeout(longPressTimer.current);
             longPressTimer.current = null;
         }
+        touchStartPos.current = null;
     };
 
-    const handleTouchMove = () => {
-        isMoving.current = true;
-        if (longPressTimer.current) {
-            clearTimeout(longPressTimer.current);
-            longPressTimer.current = null;
+    const handleTouchMove = (e: React.TouchEvent) => {
+        // Only cancel if moved more than 15px (to avoid accidental cancellation from finger jitter)
+        if (touchStartPos.current) {
+            const touch = e.touches[0];
+            const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+            const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+            if (dx > 15 || dy > 15) {
+                isMoving.current = true;
+                if (longPressTimer.current) {
+                    clearTimeout(longPressTimer.current);
+                    longPressTimer.current = null;
+                }
+            }
         }
     };
 

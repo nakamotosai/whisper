@@ -59,7 +59,9 @@ const MapEvents = ({ onMove, onZoomChange, onInteraction, onMoveStateChange, isC
         const handleMoveStart = () => onMoveStateChange(true);
         const handleMoveEnd = () => {
             onMoveStateChange(false);
-            update();
+            // Always update location when move ends, even if controlled
+            // This ensures zoom changes are properly propagated to parent
+            onMove({ lat: map.getCenter().lat, lng: map.getCenter().lng, zoom: map.getZoom() });
             updateZoom();
         };
 
@@ -333,6 +335,15 @@ const MouseHoverHandler = ({ onHover, zoom, isMobile }: {
     return null;
 };
 
+// H3 center cache to avoid repeated calculations
+const h3CenterCache = new Map<string, [number, number]>();
+const getCachedH3Center = (h3Index: string): [number, number] => {
+    if (!h3CenterCache.has(h3Index)) {
+        h3CenterCache.set(h3Index, getH3Center(h3Index));
+    }
+    return h3CenterCache.get(h3Index)!;
+};
+
 // Active room markers - shows center dots for hexagons that have chatrooms
 const ActiveRoomMarkers = memo(({
     existingRoomIds,
@@ -362,7 +373,14 @@ const ActiveRoomMarkers = memo(({
                     const h3Index = rid.split('_')[1];
                     if (!h3Index) return null;
                     if (h3Index === userH3Index) return null; // User hex has user marker
-                    const center = getH3Center(h3Index);
+                    // Use cached H3 center to avoid repeated calculations
+                    let center: [number, number];
+                    if (h3CenterCache.has(h3Index)) {
+                        center = h3CenterCache.get(h3Index)!;
+                    } else {
+                        center = getH3Center(h3Index);
+                        h3CenterCache.set(h3Index, center);
+                    }
                     if (!center || (center[0] === 0 && center[1] === 0)) return null;
                     return { roomId: rid, h3Index, lat: center[0], lng: center[1] };
                 } catch {

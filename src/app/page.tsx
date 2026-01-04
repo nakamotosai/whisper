@@ -62,7 +62,7 @@ const RANDOM_NAMES = [
   '无名氏', '路人甲', '吃瓜群众', '潜水员', '快乐星球', '忧郁的蓝', '热情的红', '宁静的绿', '纯真的白', '深邃的黑',
   '失眠飞行', '梦游仙境', '幻觉实验室', '记忆碎片', '逻辑悖论', '非线性思维', '主观能动性', '客观存在', '偶然性', '必然结果'
 ];
-const MAX_MESSAGES = 200; // 内存中最多保留的消息数量，超出时移除最旧的消息
+const MAX_MESSAGES = 500; // 内存中最多保留的消息数量，超出时移除最旧的消息
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -147,6 +147,8 @@ export default function Home() {
   const currentUserRef = useRef<User>(currentUser);
   const channelsRef = useRef<Record<string, any>>({});
   const isUpdatingLocationRef = useRef(false);
+  // Cache for fetchActivity results to avoid repeated database queries
+  const activityCacheRef = useRef<{ data: ActivityMarker[], timestamp: number, scale: string }>({ data: [], timestamp: 0, scale: '' });
 
   useEffect(() => { activeScaleRef.current = activeScale; }, [activeScale]);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
@@ -188,18 +190,31 @@ export default function Home() {
   }, []);
 
   const fetchIPInfo = async (): Promise<{ ip: string | null, countryCode: string | null }> => {
-    // Try ipapi.co first
+    const fetchWithTimeout = async (url: string, timeoutMs: number): Promise<Response> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        return res;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+      }
+    };
+
+    // Try ipapi.co first with 5 second timeout
     try {
-      const res = await fetch('https://ipapi.co/json/');
+      const res = await fetchWithTimeout('https://ipapi.co/json/', 5000);
       if (res.ok) {
         const data = await res.json();
         return { ip: data.ip || null, countryCode: data.country_code || null };
       }
     } catch (err) { }
 
-    // Fallback to ip-api.com
+    // Fallback to ip-api.com with 5 second timeout
     try {
-      const res = await fetch('http://ip-api.com/json/');
+      const res = await fetchWithTimeout('http://ip-api.com/json/', 5000);
       if (res.ok) {
         const data = await res.json();
         return { ip: data.query || null, countryCode: data.countryCode || null };
@@ -455,8 +470,11 @@ export default function Home() {
 
   const onLocationChange = useCallback((loc: any) => {
     if (isUpdatingLocationRef.current) return;
+    // When user is interacting (scrolling/dragging), we still need to update location
+    // to trigger activeScale changes, but we clear forcedZoom to let user take control
     if (loc.isInteraction) {
       setForcedZoom(null);
+      // Don't return - let the normal update flow continue for zoom changes
       return;
     }
     setLocation(loc);
@@ -545,9 +563,10 @@ export default function Home() {
 
 
 
-  // Separate effects for each room to handle jitter and subscription independently
+  // DISTRICT channel - lazy loaded only when user is viewing DISTRICT scale
   useEffect(() => {
-    if (!mounted || !supabase || !roomIds[ScaleLevel.DISTRICT]) return;
+    // Only subscribe when activeScale is DISTRICT (lazy loading)
+    if (!mounted || !supabase || !roomIds[ScaleLevel.DISTRICT] || activeScale !== ScaleLevel.DISTRICT) return;
     const rid = roomIds[ScaleLevel.DISTRICT];
     const scale = ScaleLevel.DISTRICT;
 
@@ -565,13 +584,7 @@ export default function Home() {
           isGM: m.is_gm, replyTo: m.reply_to, voiceDuration: m.voice_duration
         })).reverse();
 
-        setAllMessages(prev => {
-          const current = prev[scale];
-          // Robust check: Only replace if it's the first load for this room, 
-          // otherwise merge to prevent wiping out optimistic messages sent during re-subscribe.
-          // For separate effects, we can simplify this to replace, as each effect is for a specific room.
-          return { ...prev, [scale]: fetched };
-        });
+        setAllMessages(prev => ({ ...prev, [scale]: fetched }));
         setHasMore(prev => ({ ...prev, [scale]: data.length >= 30 }));
       }
     };
@@ -597,7 +610,6 @@ export default function Home() {
         setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.id ? { ...m, isRecalled: true } : m) }));
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `room_id=eq.${rid}` }, (payload) => {
-        // Handle database updates for recall
         if (payload.new.is_recalled) {
           setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.new.id ? { ...m, isRecalled: true } : m) }));
         }
@@ -624,17 +636,20 @@ export default function Home() {
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
+          const user = currentUserRef.current;
+          await channel.track({ user_id: user.id, user_name: user.name, avatarSeed: user.avatarSeed, isGM: user.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
         }
         console.log(`Channel room_${rid} status:`, status);
       });
 
     channelsRef.current[rid] = channel;
     return () => { if (supabase) { supabase.removeChannel(channel); delete channelsRef.current[rid]; } };
-  }, [mounted, roomIds[ScaleLevel.DISTRICT], activeScale, currentUser, reconnectCounter, userGps]);
+  }, [mounted, roomIds[ScaleLevel.DISTRICT], activeScale, reconnectCounter, userGps, location.lat, location.lng]);
 
+  // CITY channel - lazy loaded only when user is viewing CITY scale
   useEffect(() => {
-    if (!mounted || !supabase || !roomIds[ScaleLevel.CITY]) return;
+    // Only subscribe when activeScale is CITY (lazy loading)
+    if (!mounted || !supabase || !roomIds[ScaleLevel.CITY] || activeScale !== ScaleLevel.CITY) return;
     const rid = roomIds[ScaleLevel.CITY];
     const scale = ScaleLevel.CITY;
 
@@ -671,7 +686,6 @@ export default function Home() {
         setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.id ? { ...m, isRecalled: true } : m) }));
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `room_id=eq.${rid}` }, (payload) => {
-        // Handle database updates for recall
         if (payload.new.is_recalled) {
           setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.new.id ? { ...m, isRecalled: true } : m) }));
         }
@@ -697,14 +711,18 @@ export default function Home() {
         }
       })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
+        if (status === 'SUBSCRIBED') {
+          const user = currentUserRef.current;
+          await channel.track({ user_id: user.id, user_name: user.name, avatarSeed: user.avatarSeed, isGM: user.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false });
+        }
         console.log(`Channel room_${rid} status:`, status);
       });
 
     channelsRef.current[rid] = channel;
     return () => { if (supabase) { supabase.removeChannel(channel); delete channelsRef.current[rid]; } };
-  }, [mounted, roomIds[ScaleLevel.CITY], activeScale, currentUser, reconnectCounter, userGps]);
+  }, [mounted, roomIds[ScaleLevel.CITY], activeScale, reconnectCounter, userGps, location.lat, location.lng]);
 
+  // WORLD channel - always connected (main channel)
   useEffect(() => {
     if (!mounted || !supabase || !roomIds[ScaleLevel.WORLD]) return;
     const rid = roomIds[ScaleLevel.WORLD];
@@ -743,7 +761,6 @@ export default function Home() {
         setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.id ? { ...m, isRecalled: true } : m) }));
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `room_id=eq.${rid}` }, (payload) => {
-        // Handle database updates for recall
         if (payload.new.is_recalled) {
           setAllMessages(prev => ({ ...prev, [scale]: prev[scale].map(m => m.id === payload.new.id ? { ...m, isRecalled: true } : m) }));
         }
@@ -757,13 +774,16 @@ export default function Home() {
         setOnlineUsers(prev => ({ ...prev, [scale]: users }));
       })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') await channel.track({ user_id: currentUser.id, user_name: currentUser.name, avatarSeed: currentUser.avatarSeed, isGM: currentUser.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false, lastReadTimestamp: 0 });
+        if (status === 'SUBSCRIBED') {
+          const user = currentUserRef.current;
+          await channel.track({ user_id: user.id, user_name: user.name, avatarSeed: user.avatarSeed, isGM: user.isGM, lat: userGps ? userGps[0] : location.lat, lng: userGps ? userGps[1] : location.lng, onlineAt: Date.now(), isTyping: false, lastReadTimestamp: 0 });
+        }
         console.log(`Channel room_${rid} status:`, status);
       });
 
     channelsRef.current[rid] = channel;
     return () => { if (supabase) { supabase.removeChannel(channel); delete channelsRef.current[rid]; } };
-  }, [mounted, roomIds[ScaleLevel.WORLD], activeScale, currentUser, reconnectCounter, userGps]);
+  }, [mounted, roomIds[ScaleLevel.WORLD], reconnectCounter, userGps, location.lat, location.lng]);
 
   const handleUpdateAnyUserName = useCallback(async (userId: string, newName: string) => {
     if (!currentUser.isGM || !supabase) return;
@@ -849,7 +869,114 @@ export default function Home() {
     }
   }, [roomIds, allMessages]);
 
+  // Climbing mode: Load oldest messages (for viewing history from the beginning)
+  const onLoadOldest = useCallback(async (scale: ScaleLevel) => {
+    const rid = roomIds[scale];
+    if (!supabase || !rid) return;
+
+    // Fetch the oldest 30 messages
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room_id', rid)
+      .order('timestamp', { ascending: true })
+      .limit(30);
+
+    if (error) {
+      console.error('Fetch oldest error:', error);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const fetched = data.map((m: any) => ({
+        id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
+        content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
+        isGM: m.is_gm, replyTo: m.reply_to
+      }));
+
+      // Replace messages with oldest first
+      setAllMessages(prev => ({
+        ...prev,
+        [scale]: fetched
+      }));
+
+      // Reset hasMore since we're now in climbing mode
+      setHasMore(prev => ({ ...prev, [scale]: false }));
+    }
+  }, [roomIds]);
+
+  // Climbing mode: Load newer messages (when scrolling down in climbing mode)
+  const onLoadNewer = useCallback(async (scale: ScaleLevel) => {
+    const rid = roomIds[scale];
+    const msgs = allMessages[scale];
+    if (!supabase || !rid || msgs.length === 0) return;
+
+    const newestTimestamp = new Date(msgs[msgs.length - 1].timestamp).toISOString();
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room_id', rid)
+      .gt('timestamp', newestTimestamp)
+      .order('timestamp', { ascending: true })
+      .limit(30);
+
+    if (error) {
+      console.error('Fetch newer error:', error);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const fetched = data.map((m: any) => ({
+        id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
+        content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
+        isGM: m.is_gm, replyTo: m.reply_to
+      }));
+
+      setAllMessages(prev => ({
+        ...prev,
+        [scale]: [...prev[scale], ...fetched]
+      }));
+    }
+  }, [roomIds, allMessages]);
+
+  // Restore Normal Mode: Load latest messages (for exiting climbing mode)
+  const onReloadLatest = useCallback(async (scale: ScaleLevel) => {
+    const rid = roomIds[scale];
+    if (!supabase || !rid) return;
+
+    // Fetch the latest 30 messages (Newest first)
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room_id', rid)
+      .order('timestamp', { ascending: false }) // Newest first
+      .limit(30);
+
+    if (error) {
+      console.error('Reload latest error:', error);
+      return;
+    }
+
+    if (data) {
+      const fetched = data.map((m: any) => ({
+        id: m.id, userId: m.user_id, userName: m.user_name || `NODE_${m.user_id.substring(0, 4)}`, userAvatarSeed: m.user_avatar_seed,
+        content: m.content, timestamp: new Date(m.timestamp).getTime(), type: m.type, countryCode: m.country_code, isRecalled: m.is_recalled || m.is_recalled === 'true',
+        isGM: m.is_gm, replyTo: m.reply_to, voiceDuration: m.voice_duration
+      })).reverse(); // Reverse to have Oldest -> Newest order in array
+
+      setAllMessages(prev => ({
+        ...prev,
+        [scale]: fetched // Replace list
+      }));
+
+      // Reset hasMore (assume there is more history if we loaded 30)
+      setHasMore(prev => ({ ...prev, [scale]: data.length >= 30 }));
+    }
+  }, [roomIds]);
+
   const handleSettingsSubmit = (e?: React.FormEvent) => {
+
     e?.preventDefault();
     const finalName = tempName.trim() || RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
 
@@ -1189,35 +1316,49 @@ export default function Home() {
         isLoggingIn={isGmLoggingIn}
         onSubmit={handleGmLogin}
       />
-      <div className={`absolute inset-0 z-0 ${isImmersiveMode && isMobile && isChatOpen ? 'hidden' : ''}`}>
-        <MapWithNoSSR
-          initialPosition={[
-            Number.isFinite(location.lat) ? location.lat : 30,
-            Number.isFinite(location.lng) ? location.lng : 120
-          ]}
-          userLocation={userGps}
-          onLocationChange={onLocationChange}
-          onMarkerClick={(m: ActivityMarker) => { setChatAnchor([m.lat, m.lng]); setIsChatOpen(true); }}
-          forcedZoom={forcedZoom}
-          fetchActivity={async (la: number, ln: number, z: number) => {
-            if (!supabase) return [];
-            const scale = getScaleLevel(z);
-            if (scale === ScaleLevel.WORLD) return [];
-            const prefix = scale.toLowerCase();
-            const { data } = await supabase.from('messages').select('room_id').like('room_id', `${prefix}_%`);
-            if (!data) return [];
-            const uni = Array.from(new Set(data.map(d => d.room_id)));
-            return uni.map(rid => { try { const h3Index = rid.split('_')[1]; const [lt, lg] = h3.cellToLatLng(h3Index); return { id: rid, lat: lt, lng: lg }; } catch (e) { return null; } }).filter(Boolean) as ActivityMarker[];
-          }}
-          theme={theme}
-          existingRoomIds={existingRoomIds}
-          onHexClick={handleHexClick}
-          activeRoomId={roomIds[activeScale]}
-          onlineUsers={onlineUsers[activeScale]}
-          currentUserId={currentUser.id}
-          isMobile={isMobile}
-        />
-      </div>
+      {/* Map - conditionally render to avoid rendering when hidden in immersive mode */}
+      {!(isImmersiveMode && isMobile && isChatOpen) && (
+        <div className="absolute inset-0 z-0">
+          <MapWithNoSSR
+            initialPosition={[
+              Number.isFinite(location.lat) ? location.lat : 30,
+              Number.isFinite(location.lng) ? location.lng : 120
+            ]}
+            userLocation={userGps}
+            onLocationChange={onLocationChange}
+            onMarkerClick={(m: ActivityMarker) => { setChatAnchor([m.lat, m.lng]); setIsChatOpen(true); }}
+            forcedZoom={forcedZoom}
+            fetchActivity={async (la: number, ln: number, z: number) => {
+              if (!supabase) return [];
+              const scale = getScaleLevel(z);
+              if (scale === ScaleLevel.WORLD) return [];
+              const prefix = scale.toLowerCase();
+
+              // Return cached result if within 10 seconds and same scale
+              const now = Date.now();
+              if (activityCacheRef.current.scale === prefix && now - activityCacheRef.current.timestamp < 10000) {
+                return activityCacheRef.current.data;
+              }
+
+              const { data } = await supabase.from('messages').select('room_id').like('room_id', `${prefix}_%`);
+              if (!data) return [];
+              const uni = Array.from(new Set(data.map(d => d.room_id)));
+              const result = uni.map(rid => { try { const h3Index = rid.split('_')[1]; const [lt, lg] = h3.cellToLatLng(h3Index); return { id: rid, lat: lt, lng: lg }; } catch (e) { return null; } }).filter(Boolean) as ActivityMarker[];
+
+              // Update cache
+              activityCacheRef.current = { data: result, timestamp: now, scale: prefix };
+              return result;
+            }}
+            theme={theme}
+            existingRoomIds={existingRoomIds}
+            onHexClick={handleHexClick}
+            activeRoomId={roomIds[activeScale]}
+            onlineUsers={onlineUsers[activeScale]}
+            currentUserId={currentUser.id}
+            isMobile={isMobile}
+          />
+        </div>
+      )}
 
       {/* Desktop Logo Overlay */}
       {!isMobile && (
@@ -1371,18 +1512,21 @@ export default function Home() {
           onlineUsers={onlineUsers[activeScale]}
           currentUserId={currentUser.id}
           isImmersive={isImmersiveMode && isMobile}
+          onLoadOldest={onLoadOldest}
+          onLoadNewer={onLoadNewer}
+          onReloadLatest={onReloadLatest}
         />
         <PWAInstaller theme={theme} />
         <IdleDimmer />
       </div>
       <style>{`
                 .crystal-nav-vertical { position: relative; background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.45)' : 'rgba(28, 28, 28, 0.5)'}; backdrop-filter: blur(16px); border-radius: 20px; border: 1.5px solid transparent; }
-                .crystal-nav-vertical::after { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: ${theme === 'light' ? '0.3' : '0.6'}; z-index: 10; animation: rainbow-drift 6s linear infinite; }
+                .crystal-nav-vertical::after { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: ${theme === 'light' ? '0.3' : '0.6'}; z-index: 10; animation: rainbow-drift 6s linear infinite; will-change: filter; transform: translateZ(0); }
                 .crystal-black-outer { background: ${theme === 'light' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(28, 28, 28, 0.6)'}; backdrop-filter: blur(20px); }
                 .container-rainbow-main { position: relative; border: 1px solid ${theme === 'light' ? 'rgba(0,0,0,0.02)' : 'rgba(255, 255, 255, 0.08)'}; }
-                .container-rainbow-main::after { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: ${theme === 'light' ? '0.3' : '0.6'}; z-index: 50; animation: rainbow-drift 6s linear infinite; }
+                .container-rainbow-main::after { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: ${theme === 'light' ? '0.3' : '0.6'}; z-index: 50; animation: rainbow-drift 6s linear infinite; will-change: filter; transform: translateZ(0); }
                 .bubble-rainbow { position: relative; background: ${theme === 'light' ? 'rgba(255,255,255,0.6)' : 'rgba(35, 35, 35, 0.6)'} !important; backdrop-filter: blur(12px); border-radius: 20px; }
-                .bubble-rainbow::before { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; z-index: 10; animation: rainbow-drift 6s linear infinite; }
+                .bubble-rainbow::before { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1.5px; background: linear-gradient(135deg, #22d3ee, #fbbf24, #f472b6, #818cf8); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; z-index: 10; animation: rainbow-drift 6s linear infinite; will-change: filter; transform: translateZ(0); }
                 .bubble-rainbow > * { position: relative; z-index: 1; }
                 @keyframes rainbow-drift { 0% { filter: hue-rotate(0deg); } 100% { filter: hue-rotate(360deg); } }
                 .custom-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
