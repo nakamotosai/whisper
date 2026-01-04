@@ -307,6 +307,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         };
     }, [isMobile, activeSubTab]);
 
+    const lastPromptTimeRef = useRef(0);
+
     const handleScroll = useCallback(async () => {
         if (!scrollRef.current) return;
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
@@ -319,16 +321,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             // Normal mode behavior
             // Hide prompt if user scrolls back down (away from top/history)
             if (absScrollTop < 200) {
+                const elapsed = Date.now() - lastPromptTimeRef.current;
+                if (elapsed < 2000) {
+                    setTimeout(() => setShowClimbingPrompt(false), 2000 - elapsed);
+                } else {
+                    setShowClimbingPrompt(false);
+                }
+
                 setShowNewMessageTip(false);
                 loadMoreCountRef.current = 0; // Reset counter when near bottom
-                setShowClimbingPrompt(false);
                 if (activeSubTab === 'CHAT' && onRead) {
                     onRead(Date.now());
                 }
             } else if (absScrollTop < scrollHeight - clientHeight - 300) {
                 // Also hide prompt if user is just scrolling in the middle, away from the trigger zone
-                // But keep loadMoreCountRef to not require 2 fresh pulls if they go back up immediately
-                setShowClimbingPrompt(false);
+                const elapsed = Date.now() - lastPromptTimeRef.current;
+                if (elapsed < 2000) {
+                    setTimeout(() => setShowClimbingPrompt(false), 2000 - elapsed);
+                } else {
+                    setShowClimbingPrompt(false);
+                }
             }
 
             // Trigger load more when scrolling up (towards older messages)
@@ -339,6 +351,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 // Show climbing mode prompt after 1 load more trigger
                 if (loadMoreCountRef.current >= 1 && onLoadOldest) {
                     setShowClimbingPrompt(true);
+                    lastPromptTimeRef.current = Date.now();
                 }
 
                 if (onLoadMore) {
@@ -533,18 +546,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         }
     }, [onLoadOldest, scale]);
 
-    const exitClimbingMode = useCallback(async () => {
-        // Trigger reload of latest messages if function is provided
-        if (onReloadLatest) {
-            await onReloadLatest(scale);
-        }
-
-        setIsClimbingMode(false);
-        setShowClimbingPrompt(false);
-        loadMoreCountRef.current = 0;
-        // Scroll to bottom (latest messages)
-        scrollToBottom('auto');
-    }, [onReloadLatest, scale]);
+    const exitClimbingMode = useCallback(() => {
+        window.location.reload();
+    }, []);
 
     // In climbing mode, messages are displayed in chronological order (oldest first)
     // In normal mode, messages are reversed (newest first at bottom with column-reverse)
@@ -668,7 +672,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                 {/* Climbing mode prompt button - appears when user scrolls up multiple times */}
                 {showClimbingPrompt && !isClimbingMode && (
-                    <div className="fixed inset-x-0 top-1/3 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="fixed inset-x-0 top-28 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-300">
                         <button
                             onClick={enterClimbingMode}
                             className={`pointer-events-auto px-4 py-2.5 rounded-full backdrop-blur-xl shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 ${theme === 'light' ? 'bg-white/90 text-black border border-black/10' : 'bg-[#2a2a2a]/90 text-white border border-white/10'}`}
