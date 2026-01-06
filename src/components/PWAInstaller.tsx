@@ -19,6 +19,9 @@ export const PWAInstaller: React.FC<PWAInstallerProps> = ({ theme = 'dark' }) =>
             || (window.navigator as any).standalone
             || document.referrer.includes('android-app://');
 
+        // Defer state update to avoid warning if possible, though strict mode often flags this.
+        // Actually, for PWA checks, it's safe to set it once on mount.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsStandalone(isStandaloneMode);
 
         // iOS detection

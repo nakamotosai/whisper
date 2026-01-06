@@ -152,7 +152,7 @@ export const SettingsPanel = ({
                             <span className={`text-[10px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/70' : 'text-white/70'}`}>隐私保护说明</span>
                         </div>
                         <p className={`text-[10px] font-normal leading-relaxed lowercase tracking-wide ${theme === 'light' ? 'text-black/50' : 'text-white/45'}`}>
-                            为了保护您的驻地隐私，系统已自动为您的实时位置添加约 **2公里** 的随机偏移。这意味着即使在"地区"频道中，其他用户也无法精确推断您的真实住所。
+                            为了保护您的驻地隐私，系统已自动为您的实时位置添加约 **2公里** 的随机偏移。这意味着即使在&quot;地区&quot;频道中，其他用户也无法精确推断您的真实住所。
                         </p>
                     </div>
 

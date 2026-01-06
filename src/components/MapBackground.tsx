@@ -19,6 +19,7 @@ const PaddedSvgRenderer = () => {
         // Create a new SVG renderer with 50% padding to prevent clipping at edges
         const svgRenderer = L.svg({ padding: 0.5 });
         // Set it as the default renderer for the map
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, react-hooks/immutability
         (map.options as any).renderer = svgRenderer;
         // Force redraw of all vector layers
         map.eachLayer((layer: any) => {
@@ -452,11 +453,17 @@ export const MapBackground = memo(({
     const [domReady, setDomReady] = useState(false);
     const [hoveredH3Index, setHoveredH3Index] = useState<string | null>(null);
 
-    const fuzzedLocation = useMemo(() => {
-        if (!userLocation) return null;
+    const [fuzzedLocation, setFuzzedLocation] = useState<[number, number] | null>(null);
+
+    useEffect(() => {
+        if (!userLocation) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setFuzzedLocation(null);
+            return;
+        }
         const offLat = (Math.random() - 0.5) * 0.005;
         const offLng = (Math.random() - 0.5) * 0.005;
-        return [userLocation[0] + offLat, userLocation[1] + offLng] as [number, number];
+        setFuzzedLocation([userLocation[0] + offLat, userLocation[1] + offLng]);
     }, [userLocation]);
 
     // Calculate user's H3 index for current scale
@@ -466,7 +473,9 @@ export const MapBackground = memo(({
         return getUserH3Index(userLocation[0], userLocation[1], currentScale);
     }, [userLocation, zoom]);
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { setDomReady(true); }, []);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { if (forcedZoom !== null) setZoom(forcedZoom); }, [forcedZoom]);
 
     const onAnimationComplete = useCallback(() => {

@@ -132,6 +132,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const viewerControlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const viewerScaleRef = useRef(1);
 
+    // Auto-hide climbing prompt after 2 seconds
+    useEffect(() => {
+        if (showClimbingPrompt) {
+            const timer = setTimeout(() => {
+                setShowClimbingPrompt(false);
+            }, 2000);
+            return () => clearTimeout(timer);
+        }
+    }, [showClimbingPrompt]);
+
     // Reset controls visibility when viewer opens
     useEffect(() => {
         if (viewerIndex !== null) {
@@ -219,7 +229,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             const newImages = chatImages.filter(img => !existingIds.has(img.id));
 
             if (newImages.length === 0 && filteredPrev.length === prev.length) return prev;
-            return [...newImages.reverse(), ...filteredPrev];
+
+            // Sort by timestamp ascending (Oldest to Newest)
+            // Top-left will be the oldest image
+            return [...filteredPrev, ...newImages].sort((a, b) => a.timestamp - b.timestamp);
         });
     }, [messages]);
 
@@ -235,8 +248,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
             const roomChanged = roomId !== lastRoomId.current;
             const subTabChangedToChat = activeSubTab === 'CHAT' && lastSubTab.current !== 'CHAT';
+            const subTabChangedToImages = activeSubTab === 'IMAGES' && lastSubTab.current !== 'IMAGES';
 
-            if (roomChanged || subTabChangedToChat) {
+            if (roomChanged || subTabChangedToChat || subTabChangedToImages) {
                 lastMessageId.current = null;
                 lastRoomId.current = roomId;
                 lastSubTab.current = activeSubTab;
@@ -372,8 +386,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                 // Show climbing mode prompt after 1 load more trigger
                 if (loadMoreCountRef.current >= 1 && onLoadOldest) {
-                    setShowClimbingPrompt(true);
-                    lastPromptTimeRef.current = Date.now();
+                    // Only show if we are significantly up the list (not near bottom)
+                    // This prevents showing it for short content that fits in one screen
+                    if (absScrollTop > 200) {
+                        setShowClimbingPrompt(true);
+                        lastPromptTimeRef.current = Date.now();
+                    }
                 }
 
                 if (onLoadMore) {
@@ -796,7 +814,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 )}
                 {activeSubTab === 'IMAGES' && (
                     <div className="grid grid-cols-3 gap-2 pb-8 animate-in fade-in duration-700">
-                        {galleryImages.map((img, i) => (
+                        {[...galleryImages].sort((a, b) => a.timestamp - b.timestamp).map((img, i) => (
                             <div key={img.id} onClick={() => { setViewerIndex(i); }} className="aspect-square rounded-2xl overflow-hidden cursor-zoom-in group relative shadow-md">
                                 <img src={img.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={`Shared Photo by ${img.author}`} loading="lazy" />
                                 <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">

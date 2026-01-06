@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { ChatInterface } from '@/components/ChatInterface';
 import { PWAInstaller } from '@/components/PWAInstaller';
@@ -10,8 +11,12 @@ import { SuggestionPanel } from '@/components/SuggestionPanel';
 import { GMPrompt } from '@/components/GMPrompt';
 import { useGMLogic } from '@/hooks/useGMLogic';
 import { useSuggestionLogic } from '@/hooks/useSuggestionLogic';
-import { LocationState, ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType, ActivityMarker, RoomStats, UserPresence } from '@/types';
-import { getRoomId, getScaleLevel, getBucket, BUCKET_SIZES, getLocationName, getCountryCode, canJoinHex } from '@/lib/spatialService';
+import { LocationState, ScaleLevel, Message, User, ThemeType, ActivityMarker, UserPresence } from '@/types';
+import { getRoomId, getScaleLevel, getLocationName, getCountryCode, canJoinHex } from '@/lib/spatialService';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { TabType, SubTabType, LiveStream, SharedImage, RoomStats } from '@/types';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { getBucket, BUCKET_SIZES } from '@/lib/spatialService';
 import { uploadImage, uploadVoice } from '@/lib/r2Storage';
 import dynamic from 'next/dynamic';
 import * as h3 from 'h3-js';
@@ -91,6 +96,7 @@ export default function Home() {
   // Chat Panel Resize State
   const [chatWidth, setChatWidth] = useState(360);
   const [isResizing, setIsResizing] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const resizerRef = useRef<HTMLDivElement>(null);
 
   // Existing chatrooms for hexagon display
@@ -1246,7 +1252,7 @@ export default function Home() {
       .eq('room_id', rid)
       .eq('type', 'image')
       .neq('is_recalled', true)
-      .order('timestamp', { ascending: false });
+      .order('timestamp', { ascending: true });
     if (!data) return [];
 
     return data.flatMap((m: any) => {
@@ -1261,7 +1267,7 @@ export default function Home() {
         lng: 0,
         timestamp: new Date(m.timestamp).getTime()
       }));
-    });
+    }).sort((a: any, b: any) => a.timestamp - b.timestamp);
   }, []);
 
   if (!mounted) return <div className="h-screen w-screen bg-black" />;

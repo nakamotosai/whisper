@@ -248,7 +248,7 @@ export const MessageItem = memo(({
                                         })}
                                     </div>
                                     <div className={`text-[12px] font-normal font-mono shrink-0 ml-1 ${theme === 'light' ? 'text-black/40' : 'text-white/50'}`}>
-                                        {msg.voiceDuration || 0}"
+                                        {msg.voiceDuration || 0}&quot;
                                     </div>
                                 </div>
                             ) : (
@@ -299,7 +299,9 @@ export const MessageItem = memo(({
                             >
                                 复制
                             </button>
-                            {isOwn && (Date.now() - msg.timestamp < 30 * 60 * 1000) && (
+
+                            {/* Recall button - only show if within 30 mins and is own message. Using state to avoid hydration mismatch. */}
+                            {isOwn && canRecall && (
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -352,7 +354,7 @@ export const MessageItem = memo(({
                     )}
                 </div>
             </div>
-        </div>
+        </div >
     );
 });
 
