@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { ScaleLevel, Message, User, SubTabType, LiveStream, SharedImage, ThemeType, UserPresence } from '@/types';
@@ -110,7 +111,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         if (saved) {
             try {
                 setRecentEmojis(JSON.parse(saved));
-            } catch (e) { }
+            } catch { }
         }
     }, []);
 
@@ -127,6 +128,27 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     const [viewerIndex, setViewerIndex] = useState<number | null>(null);
     const [galleryImages, setGalleryImages] = useState<SharedImage[]>([]);
+    const [showControls, setShowControls] = useState(true);
+    const viewerControlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const viewerScaleRef = useRef(1);
+
+    // Reset controls visibility when viewer opens
+    useEffect(() => {
+        if (viewerIndex !== null) {
+            setShowControls(true);
+            resetControlsTimeout();
+        } else {
+            if (viewerControlsTimeoutRef.current) clearTimeout(viewerControlsTimeoutRef.current);
+        }
+    }, [viewerIndex]);
+
+    const resetControlsTimeout = useCallback(() => {
+        if (viewerControlsTimeoutRef.current) clearTimeout(viewerControlsTimeoutRef.current);
+        setShowControls(true);
+        viewerControlsTimeoutRef.current = setTimeout(() => {
+            setShowControls(false);
+        }, 3000);
+    }, []);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -550,6 +572,77 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         window.location.reload();
     }, []);
 
+    const transformControlsRef = useRef<any>(null);
+    const touchStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
+    const lastTapTimeRef = useRef<number>(0);
+    const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (e.touches.length === 1) {
+            touchStartRef.current = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY,
+                time: Date.now()
+            };
+        }
+    };
+
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        if (!touchStartRef.current) return;
+        const touchEnd = {
+            x: e.changedTouches[0].clientX,
+            y: e.changedTouches[0].clientY,
+            time: Date.now()
+        };
+
+        const diffX = touchEnd.x - touchStartRef.current.x;
+        const diffY = touchEnd.y - touchStartRef.current.y;
+        const diffTime = touchEnd.time - touchStartRef.current.time;
+
+        const isTap = Math.abs(diffX) < 10 && Math.abs(diffY) < 10 && diffTime < 300;
+
+        // Swipe Detections (Only if scale is near 1)
+        if (!isTap && Math.abs(diffX) > 50 && Math.abs(diffY) < 50 && Math.abs(viewerScaleRef.current - 1) < 0.1) {
+            if (diffX > 0) {
+                // Swipe Right -> Prev Image
+                if (viewerIndex !== null && viewerIndex > 0) setViewerIndex(viewerIndex - 1);
+            } else {
+                // Swipe Left -> Next Image
+                if (viewerIndex !== null && viewerIndex < galleryImages.length - 1) setViewerIndex(viewerIndex + 1);
+            }
+        }
+
+        // Tap Handling
+        if (isTap) {
+            const now = Date.now();
+            const timeSinceLastTap = now - lastTapTimeRef.current;
+
+            if (timeSinceLastTap < 300) {
+                // Double Tap Detected
+                if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+                lastTapTimeRef.current = 0;
+                // Let react-zoom-pan-pinch handle the zoom via its internal double tap listeners
+                // or we can manually trigger if needed, but usually it works out of box.
+                // We just prevent single tap action here.
+            } else {
+                // Potential Single Tap
+                lastTapTimeRef.current = now;
+                tapTimeoutRef.current = setTimeout(() => {
+                    // Single Tap Action Triggered
+                    if (showControls) {
+                        // If controls are shown, SINGLE TAP CLOSES THE VIEWER (Per user request: "用手触碰一次图片后直接关闭图片")
+                        setViewerIndex(null);
+                    } else {
+                        // If controls are hidden, show them
+                        resetControlsTimeout();
+                    }
+                }, 300);
+            }
+        }
+
+        touchStartRef.current = null;
+    };
+
     // In climbing mode, messages are displayed in chronological order (oldest first)
     // In normal mode, messages are reversed (newest first at bottom with column-reverse)
     const displayMessages = useMemo(() => {
@@ -836,47 +929,93 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 </div>
             </div>
 
-            {viewerIndex !== null && (
-                <div className="fixed inset-0 z-[10000] flex flex-col bg-black animate-in fade-in duration-500 overflow-hidden" onPointerMove={(e) => e.stopPropagation()}>
-                    <div className="absolute top-0 inset-x-0 h-24 bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none" />
-                    <div className="absolute top-8 right-8 z-20 flex items-center gap-6">
-                        <button onClick={() => { const url = galleryImages[viewerIndex].url; const a = document.createElement('a'); a.href = url; a.download = `whisper_${Date.now()}.jpg`; document.body.appendChild(a); a.click(); document.body.removeChild(a); }} className="text-white/60 hover:text-white transition-colors p-2"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg></button>
-                        <button onClick={() => setViewerIndex(null)} className="text-white/60 hover:text-white transition-colors p-2 glass-effect rounded-full"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+            {viewerIndex !== null && typeof document !== 'undefined' && createPortal(
+                <div
+                    className="fixed inset-0 z-[10000] flex flex-col bg-black animate-in fade-in duration-500 overflow-hidden"
+                    onPointerMoveCapture={(e) => {
+                        // Reset timeout on ANY mouse movement
+                        resetControlsTimeout();
+                    }}
+                    onTouchStart={(e) => {
+                        handleTouchStart(e);
+                        // Reset timeout on interaction
+                        resetControlsTimeout();
+                    }}
+                    onTouchEnd={handleTouchEnd}
+                    onClick={() => {
+                        // Desktop click handling if needed, or rely on touches for mobile
+                        if (!isMobile) {
+                            // Desktop behavior
+                        }
+                    }}
+                >
+                    <div className={`absolute top-8 right-8 z-20 flex items-center gap-6 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                        <button onClick={(e) => { e.stopPropagation(); const url = galleryImages[viewerIndex].url; const a = document.createElement('a'); a.href = url; a.download = `whisper_${Date.now()}.jpg`; document.body.appendChild(a); a.click(); document.body.removeChild(a); resetControlsTimeout(); }} className="text-white/60 hover:text-white transition-colors p-2"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg></button>
+                        <button onClick={(e) => { e.stopPropagation(); setViewerIndex(null); }} className="text-white/60 hover:text-white transition-colors p-2 glass-effect rounded-full"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                     </div>
-                    <div className="absolute top-8 left-8 z-20">
+                    <div className={`absolute top-8 left-8 z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
                         <div className="flex flex-col gap-0.5">
                             <span className="text-white font-medium tracking-widest text-[13px] uppercase">{galleryImages[viewerIndex].author}</span>
                             <span className="text-white/40 text-[10px] tabular-nums tracking-wider uppercase">{formatDistanceToNow(galleryImages[viewerIndex].timestamp, { addSuffix: true, locale: zhCN })}</span>
                         </div>
                     </div>
-                    <div className="flex-1 flex items-center justify-center relative touch-none">
+                    <div className="flex-1 flex items-center justify-center relative touch-none bg-black/90">
                         <TransformWrapper
                             initialScale={1}
-                            minScale={0.1}
+                            minScale={0.5}
                             maxScale={5}
                             centerOnInit={true}
-                            limitToBounds={false}
+                            wheel={{ step: 0.2 }}
+                            doubleClick={{ disabled: true }}
+                            alignmentAnimation={{ sizeX: 0, sizeY: 0 }}
+                            onTransformed={(e) => { viewerScaleRef.current = e.state.scale; }}
+                            onPanning={resetControlsTimeout}
+                            onPanningStop={resetControlsTimeout}
+                            onZooming={resetControlsTimeout}
+                            onZoomingStop={resetControlsTimeout}
                         >
-                            <TransformComponent wrapperClass="!w-screen !h-screen" contentClass="!w-screen !h-screen flex items-center justify-center">
-                                <img
-                                    src={galleryImages[viewerIndex].url}
-                                    className="max-w-full max-h-full object-contain shadow-2xl"
-                                    alt="Full view"
-                                    style={{ width: 'auto', height: 'auto' }}
-                                />
-                            </TransformComponent>
+                            {(controls) => {
+                                transformControlsRef.current = controls;
+                                const { centerView } = controls;
+                                return (
+                                    <React.Fragment>
+                                        <TransformComponent wrapperClass="!w-screen !h-screen" contentClass="!w-screen !h-screen flex items-center justify-center">
+                                            <img
+                                                src={galleryImages[viewerIndex].url}
+                                                className="max-w-[100vw] max-h-[100vh] w-auto h-auto object-contain shadow-2xl"
+                                                alt="Full view"
+                                                onLoad={() => {
+                                                    setTimeout(() => centerView(), 50);
+                                                    viewerScaleRef.current = 1;
+                                                }}
+                                                onClick={(e) => {
+                                                    // Handle Click/Tap logic
+                                                    // We need to distinguish Single Tap vs Double Tap
+                                                    // React-zoom-pan-pinch handles double tap zoom natively if configured, 
+                                                    // but we need our custom Single Tap logic.
+                                                    // Ideally, we handle tap in the container touch handlers, but event propagation might be tricky.
+                                                    // Let's rely on the container's gesture handler for swipes, and use a custom Handler for taps if native onClick is too slow or conflicted.
+                                                }}
+                                            />
+                                        </TransformComponent>
+                                        {/* Invisible Overlay for Gesture Capture if needed, but TransformWrapper wraps image */}
+                                    </React.Fragment>
+                                )
+                            }}
                         </TransformWrapper>
-                        {viewerIndex > 0 && (
-                            <button onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex - 1); }} className="absolute left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all z-20 backdrop-blur-md border border-white/10"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+                        {/* Navigation Arrows - Hide on mobile if swipe works, keep on desktop? Or hide if controls hidden */}
+                        {viewerIndex > 0 && !isMobile && (
+                            <button onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex - 1); resetControlsTimeout(); }} className={`absolute left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all z-20 backdrop-blur-md border border-white/10 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
                         )}
-                        {viewerIndex < galleryImages.length - 1 && (
-                            <button onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex + 1); }} className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all z-20 backdrop-blur-md border border-white/10"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></button>
+                        {viewerIndex < galleryImages.length - 1 && !isMobile && (
+                            <button onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex + 1); resetControlsTimeout(); }} className={`absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all z-20 backdrop-blur-md border border-white/10 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></button>
                         )}
                     </div>
-                    <div className="absolute bottom-12 inset-x-0 flex justify-center z-20 items-center gap-4">
+                    <div className={`absolute bottom-12 inset-x-0 flex justify-center z-20 items-center gap-4 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
                         <div className="px-5 py-2.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-2xl text-[12px] text-white/90 tabular-nums font-medium tracking-[0.2em]">{viewerIndex + 1} / {galleryImages.length}</div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

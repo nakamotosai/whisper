@@ -14,6 +14,8 @@ interface SettingsPanelProps {
     isMobile: boolean;
     isImmersiveMode: boolean;
     setIsImmersiveMode: (mode: boolean) => void;
+    useCustomCursor: boolean;
+    setUseCustomCursor: (use: boolean) => void;
     onLogoClick: () => void;
     onLogoutGM: () => void;
     onOpenSuggestions: () => void;
@@ -33,6 +35,8 @@ export const SettingsPanel = ({
     isMobile,
     isImmersiveMode,
     setIsImmersiveMode,
+    useCustomCursor,
+    setUseCustomCursor,
     onLogoClick,
     onLogoutGM,
     onOpenSuggestions,
@@ -89,6 +93,22 @@ export const SettingsPanel = ({
                             <span className={`text-[11px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>沉浸模式 (隐藏地图)</span>
                             <div className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${isImmersiveMode ? 'bg-green-500' : (theme === 'light' ? 'bg-black/20' : 'bg-white/20')}`}>
                                 <div className={`absolute top-1 w-3 h-3 rounded-full bg-white shadow-sm transition-all duration-300 ${isImmersiveMode ? 'left-[22px]' : 'left-1'}`} />
+                            </div>
+                        </div>
+                    )}
+
+                    {!isMobile && (
+                        <div
+                            onClick={() => {
+                                const newVal = !useCustomCursor;
+                                setUseCustomCursor(newVal);
+                                localStorage.setItem('whisper_custom_cursor', String(newVal));
+                            }}
+                            className={`py-3 px-4 rounded-xl border flex items-center justify-between cursor-pointer transition-all active:scale-95 ${theme === 'light' ? 'bg-black/5 border-black/10' : 'bg-white/5 border-white/10'}`}
+                        >
+                            <span className={`text-[11px] font-normal uppercase tracking-tight ${theme === 'light' ? 'text-black/80' : 'text-white/80'}`}>个性化光标 (Liquid)</span>
+                            <div className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${useCustomCursor ? 'bg-green-500' : (theme === 'light' ? 'bg-black/20' : 'bg-white/20')}`}>
+                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white shadow-sm transition-all duration-300 ${useCustomCursor ? 'left-[22px]' : 'left-1'}`} />
                             </div>
                         </div>
                     )}

@@ -86,6 +86,7 @@ export default function Home() {
   const [reconnectCounter, setReconnectCounter] = useState(0);
   const [isImmersiveMode, setIsImmersiveMode] = useState(false);
   const [userIp, setUserIp] = useState<string | null>(null);
+  const [useCustomCursor, setUseCustomCursor] = useState(false);
 
   // Chat Panel Resize State
   const [chatWidth, setChatWidth] = useState(360);
@@ -185,7 +186,7 @@ export default function Home() {
       if (tz.includes('America') || tz.includes('US/')) return { lat: 37.0902, lng: -95.7129, zoom: 5, countryCode: 'US' };
       if (tz.includes('London')) return { lat: 51.5074, lng: -0.1278, zoom: 5, countryCode: 'GB' };
       if (tz.includes('Europe/')) return { lat: 48.8566, lng: 2.3522, zoom: 5, countryCode: 'FR' }; // Default Europe to FR for coords
-    } catch (e) { }
+    } catch { }
     return { ...CHINA_DEFAULT, countryCode: 'CN' };
   }, []);
 
@@ -343,6 +344,16 @@ export default function Home() {
     window.visualViewport?.addEventListener('scroll', handleResize);
     handleResize();
 
+    // Default chat width to ~40% of screen on desktop IF no previous setting exists
+    if (window.innerWidth >= 768) {
+      const savedWidth = localStorage.getItem('whisper_chat_width');
+      if (savedWidth) {
+        setChatWidth(parseInt(savedWidth));
+      } else {
+        setChatWidth(window.innerWidth * 0.4);
+      }
+    }
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         setReconnectCounter(prev => prev + 1);
@@ -363,6 +374,9 @@ export default function Home() {
 
     const storedImmersive = localStorage.getItem('whisper_immersive_mode');
     if (storedImmersive) setIsImmersiveMode(storedImmersive === 'true');
+
+    const storedCursor = localStorage.getItem('whisper_custom_cursor');
+    if (storedCursor) setUseCustomCursor(storedCursor === 'true');
 
     return () => {
       window.removeEventListener('resize', handleResize);
@@ -1286,6 +1300,8 @@ export default function Home() {
         isMobile={isMobile}
         isImmersiveMode={isImmersiveMode}
         setIsImmersiveMode={setIsImmersiveMode}
+        useCustomCursor={useCustomCursor}
+        setUseCustomCursor={setUseCustomCursor}
         onLogoClick={handleLogoClick}
         onLogoutGM={handleLogoutGM}
         onOpenSuggestions={() => setShowSuggestionPanel(true)}
@@ -1540,7 +1556,8 @@ export default function Home() {
                     animation: wave-bounce 0.5s ease-in-out infinite;
                 }
                 
-                /* Option B: Liquid Glow Cursor Implementation */
+                /* Option B: Liquid Glow Cursor Implementation - Only if enabled */
+                ${useCustomCursor ? `
                 * {
                     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='3.5' fill='${theme === 'light' ? 'black' : 'white'}' opacity='0.9'/%3E%3C/svg%3E") 6 6, auto !important;
                 }
@@ -1548,6 +1565,7 @@ export default function Home() {
                 button, a, .leaflet-marker-icon, .activity-dot, [role="button"], input, textarea, .self-marker, .crystal-nav-vertical * {
                     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='${theme === 'light' ? 'black' : 'white'}' stroke-width='1.5' opacity='0.8'/%3E%3Ccircle cx='16' cy='16' r='2' fill='${theme === 'light' ? 'black' : 'white'}'/%3E%3C/svg%3E") 16 16, pointer !important;
                 }
+                ` : ''}
             `}</style>
     </div>
   );
